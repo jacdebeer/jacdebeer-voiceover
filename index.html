@@ -8,6 +8,16 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Load lamejs globally to avoid strict mode/ESM issues with legacy library -->
     <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
+    <!-- Load pdf.js -->
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+    <script>
+      // Configure pdf.js worker
+      document.addEventListener('DOMContentLoaded', () => {
+        if (window.pdfjsLib) {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+        }
+      });
+    </script>
     <style>
       body {
         font-family: 'Inter', sans-serif;
@@ -42,5 +52,18 @@
 </head>
   <body>
     <div id="root"></div>
+
+    <!-- Hidden sample content for Extraction Demo -->
+    <div style="display: none;">
+      <div class="mcg-block">
+        Welcome to the Course Introduction. This content was extracted from the page automatically.
+      </div>
+      <div class="mcg-block">
+        Module 1: The Basics of Gemini. Gemini is a multimodal AI model capable of understanding text, images, video, and audio.
+      </div>
+      <div class="mcg-block">
+        Module 2: Advanced Audio Generation. With the Gemini API, developers can create lifelike speech for accessibility and education.
+      </div>
+    </div>
   </body>
 </html>

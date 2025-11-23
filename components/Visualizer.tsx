@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef } from 'react';
 
 interface VisualizerProps {
@@ -7,7 +8,7 @@ interface VisualizerProps {
 
 export const Visualizer: React.FC<VisualizerProps> = ({ analyser, isPlaying }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<number>();
+  const animationRef = useRef<number>(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -16,10 +17,12 @@ export const Visualizer: React.FC<VisualizerProps> = ({ analyser, isPlaying }) =
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Optimize for visual aesthetics: fewer bins for wider bars
+    analyser.fftSize = 64; // 32 frequency bins
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
     
-    // Set canvas dimensions
+    // Handle HiDPI displays
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width * dpr;
@@ -27,13 +30,15 @@ export const Visualizer: React.FC<VisualizerProps> = ({ analyser, isPlaying }) =
     ctx.scale(dpr, dpr);
 
     const draw = () => {
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      const centerY = rect.height / 2;
+
       if (!isPlaying) {
-        ctx.clearRect(0, 0, rect.width, rect.height);
-        // Draw a flat line when idle
+        // Draw a subtle center line when idle
         ctx.beginPath();
-        ctx.moveTo(0, rect.height / 2);
-        ctx.lineTo(rect.width, rect.height / 2);
-        ctx.strokeStyle = '#e2e8f0'; // slate-200
+        ctx.moveTo(0, centerY);
+        ctx.lineTo(rect.width, centerY);
+        ctx.strokeStyle = 'rgba(129, 140, 248, 0.2)'; // Indigo-400 low opacity
         ctx.lineWidth = 2;
         ctx.stroke();
         return;
@@ -42,31 +47,45 @@ export const Visualizer: React.FC<VisualizerProps> = ({ analyser, isPlaying }) =
       animationRef.current = requestAnimationFrame(draw);
       analyser.getByteFrequencyData(dataArray);
 
-      ctx.clearRect(0, 0, rect.width, rect.height);
+      // Render settings
+      // Use a subset of bins if needed, or all
+      const bars = bufferLength; 
+      const gap = (rect.width / bars) * 0.4; // 40% gap
+      const barWidth = (rect.width / bars) - gap;
       
-      const barWidth = (rect.width / bufferLength) * 2.5;
-      let barHeight;
-      let x = 0;
+      let x = gap / 2;
 
-      for (let i = 0; i < bufferLength; i++) {
-        barHeight = (dataArray[i] / 255) * rect.height;
+      for (let i = 0; i < bars; i++) {
+        const value = dataArray[i];
+        const percent = value / 255;
+        
+        // Dynamic height with a minimum to show activity
+        const height = Math.max(4, rect.height * percent * 0.8);
 
-        // Gradient color
-        const gradient = ctx.createLinearGradient(0, rect.height - barHeight, 0, rect.height);
-        gradient.addColorStop(0, '#6366f1'); // Indigo-500
-        gradient.addColorStop(1, '#a855f7'); // Purple-500
+        // Create gradient
+        const gradient = ctx.createLinearGradient(0, centerY - height/2, 0, centerY + height/2);
+        gradient.addColorStop(0, '#818cf8'); // Indigo-400
+        gradient.addColorStop(0.5, '#c084fc'); // Purple-400
+        gradient.addColorStop(1, '#818cf8'); // Indigo-400
 
         ctx.fillStyle = gradient;
-        
-        // Draw rounded bars
-        const radius = 2;
-        if (barHeight > 0) {
-            ctx.beginPath();
-            ctx.roundRect(x, rect.height - barHeight, barWidth, barHeight, radius);
-            ctx.fill();
-        }
 
-        x += barWidth + 1;
+        // Draw rounded bar centered vertically
+        const y = centerY - height / 2;
+        const radius = barWidth / 2;
+
+        ctx.beginPath();
+        
+        // Check for roundRect support (modern browsers)
+        if (typeof ctx.roundRect === 'function') {
+             ctx.roundRect(x, y, barWidth, height, radius);
+        } else {
+             // Fallback to simple rect
+             ctx.rect(x, y, barWidth, height);
+        }
+        ctx.fill();
+
+        x += barWidth + gap;
       }
     };
 
@@ -82,7 +101,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ analyser, isPlaying }) =
   return (
     <canvas 
       ref={canvasRef} 
-      className="w-full h-16 rounded-md"
+      className="w-full h-full block"
     />
   );
 };
