@@ -17,6 +17,49 @@ Maak asseblief seker dat u die voorvereiste leeswerk voltooi het voordat u voort
 
 type Language = 'en' | 'af';
 
+const TRANSLATIONS = {
+  en: {
+    voiceStudio: "Voice Studio",
+    voiceStudioSubtitle: "Choose your narrator",
+    generateAudio: "Generate Audio",
+    generateAll: "Generate Audio for All Blocks",
+    generatingBatch: "Generating Batch Audio...",
+    selectVoice: "Select Voice",
+    speed: "Speed",
+    uploadPdf: "Upload PDF",
+    extractPage: "Extract Page",
+    fixText: "Fix Text",
+    translate: "Translate",
+    courseContent: "Course Content",
+    deleteBlock: "Delete block",
+    block: "Block",
+    of: "of",
+    chars: "characters",
+    fixTextTooltip: "Fix garbled characters (decoding repair)",
+    multilingual: "MULTILINGUAL"
+  },
+  af: {
+    voiceStudio: "Stem Studio",
+    voiceStudioSubtitle: "Kies jou verteller",
+    generateAudio: "Genereer Klank",
+    generateAll: "Genereer Klank vir Alle Blokke",
+    generatingBatch: "Genereer Tans...",
+    selectVoice: "Kies Stem",
+    speed: "Spoed",
+    uploadPdf: "Laai PDF",
+    extractPage: "Onttrek Bladsy",
+    fixText: "Herstel Teks",
+    translate: "Vertaal",
+    courseContent: "Kursus Inhoud",
+    deleteBlock: "Verwyder blok",
+    block: "Blok",
+    of: "van",
+    chars: "karakters",
+    fixTextTooltip: "Herstel onleesbare karakters",
+    multilingual: "MEERTALIG"
+  }
+};
+
 const formatTime = (seconds: number) => {
   if (!isFinite(seconds) || isNaN(seconds)) return '0:00';
   const mins = Math.floor(seconds / 60);
@@ -66,6 +109,9 @@ const App: React.FC = () => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentBlobUrlRef = useRef<string | null>(null);
+
+  // Get current translation object
+  const t = TRANSLATIONS[language];
 
   const stopAudio = useCallback(() => {
     if (audioRef.current) {
@@ -477,16 +523,23 @@ const App: React.FC = () => {
   };
 
   const handleRepairText = () => {
-    // Heuristic shift repair for PDF encoding issue (+29 shift observed)
-    // Example: '=' (61) -> 'Z' (90)
+    // Advanced heuristic shift repair for PDF encoding artifacts
+    // Handles split encoding ranges (often found in Identity-H CMap issues)
     const repaired = text.split('').map(char => {
       const code = char.charCodeAt(0);
-      // Only shift printable characters that result in valid ASCII letters/symbols
-      if (code >= 33 && code <= 126) {
-         // Special case handling could be added here if needed, but +29 fixes the provided examples
-         // =ROD -> ZOLA
+      
+      // Range 1: Symbols that map to Uppercase letters (approx 33-64) -> Add 29
+      // E.g. % (37) -> B (66), = (61) -> Z (90), 3 (51) -> P (80)
+      if (code >= 33 && code <= 64) {
          return String.fromCharCode(code + 29);
       }
+      
+      // Range 2: Uppercase/Lowercase letters that map backwards (approx 65-126) -> Subtract 3
+      // E.g. D (68) -> A (65), R (82) -> O (79), K (75) -> H (72)
+      if (code >= 65 && code <= 126) {
+         return String.fromCharCode(code - 3);
+      }
+      
       return char;
     }).join('');
     
@@ -578,7 +631,7 @@ const App: React.FC = () => {
                   />
                   <button disabled={audioState.isLoading} className="flex items-center space-x-2 px-4 py-2 bg-white border border-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors text-sm font-medium">
                     <FileUp size={16} />
-                    <span>Upload PDF</span>
+                    <span>{t.uploadPdf}</span>
                   </button>
                 </div>
 
@@ -588,7 +641,7 @@ const App: React.FC = () => {
                   className="flex items-center space-x-2 px-4 py-2 bg-white border border-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors text-sm font-medium"
                 >
                   <ScanSearch size={16} />
-                  <span>Extract Page</span>
+                  <span>{t.extractPage}</span>
                 </button>
              </div>
 
@@ -596,10 +649,10 @@ const App: React.FC = () => {
                 <button 
                  onClick={handleRepairText}
                  className="flex items-center space-x-2 text-slate-500 hover:text-emerald-600 transition-colors text-sm font-medium px-3 py-1.5 hover:bg-emerald-50 rounded-lg"
-                 title="Fix garbled characters (decoding repair)"
+                 title={t.fixTextTooltip}
                 >
                  <Wand2 size={16} />
-                 <span>Fix Text</span>
+                 <span>{t.fixText}</span>
                </button>
 
                <div className="w-px h-4 bg-slate-200 mx-1"></div>
@@ -610,7 +663,7 @@ const App: React.FC = () => {
                  className="flex items-center space-x-2 text-slate-500 hover:text-indigo-600 transition-colors text-sm font-medium px-2"
                >
                  {isTranslating ? <Loader className="animate-spin" size={16} /> : <ArrowRightLeft size={16} />}
-                 <span>Translate</span>
+                 <span>{t.translate}</span>
                </button>
              </div>
           </div>
@@ -623,7 +676,7 @@ const App: React.FC = () => {
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                <div className="flex items-center space-x-3 text-sm text-slate-500 font-medium">
                   <BookOpen size={16} />
-                  <span>Course Content</span>
+                  <span>{t.courseContent}</span>
                </div>
                
                <div className="flex items-center gap-3">
@@ -632,7 +685,7 @@ const App: React.FC = () => {
                     onClick={handleDeleteBlock}
                     disabled={audioState.isLoading || isBatchGenerating}
                     className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
-                    title="Delete current block"
+                    title={t.deleteBlock}
                    >
                      <Trash2 size={18} />
                    </button>
@@ -646,8 +699,8 @@ const App: React.FC = () => {
                         >
                           <ChevronLeft size={16} />
                         </button>
-                        <span className="text-xs font-semibold text-slate-700 w-16 text-center">
-                          Block {pageIndex + 1} of {pages.length}
+                        <span className="text-xs font-semibold text-slate-700 w-24 text-center">
+                          {t.block} {pageIndex + 1} {t.of} {pages.length}
                         </span>
                         <button 
                           onClick={() => handlePageChange('next')}
@@ -671,7 +724,7 @@ const App: React.FC = () => {
             
             {/* Character Count */}
             <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 text-right">
-               <span className="text-xs text-slate-400 font-medium">{text.length} characters</span>
+               <span className="text-xs text-slate-400 font-medium">{text.length} {t.chars}</span>
             </div>
           </div>
         </div>
@@ -685,8 +738,8 @@ const App: React.FC = () => {
                    <Mic size={24} />
                  </div>
                  <div>
-                   <h2 className="text-lg font-bold text-slate-800">Voice Studio</h2>
-                   <p className="text-sm text-slate-500">Kies jou verteller</p>
+                   <h2 className="text-lg font-bold text-slate-800">{t.voiceStudio}</h2>
+                   <p className="text-sm text-slate-500">{t.voiceStudioSubtitle}</p>
                  </div>
               </div>
 
@@ -718,8 +771,8 @@ const App: React.FC = () => {
               {/* Voice Selection */}
               <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs font-bold text-slate-400 tracking-wider uppercase">Select Voice</span>
-                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">MULTILINGUAL</span>
+                    <span className="text-xs font-bold text-slate-400 tracking-wider uppercase">{t.selectVoice}</span>
+                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">{t.multilingual}</span>
                  </div>
                  
                  {VOICE_OPTIONS.map((voice) => (
@@ -773,7 +826,7 @@ const App: React.FC = () => {
                  <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center space-x-2 text-sm text-slate-600">
                        <Gauge size={16} />
-                       <span>Speed</span>
+                       <span>{t.speed}</span>
                     </div>
                     <span className="text-sm font-bold text-indigo-600">{playbackSpeed}x</span>
                  </div>
@@ -799,7 +852,7 @@ const App: React.FC = () => {
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-sm font-medium text-slate-700 flex items-center gap-2">
                                 <Loader className="animate-spin text-indigo-600" size={16} />
-                                Generating Batch Audio...
+                                {t.generatingBatch}
                             </span>
                             <span className="text-xs text-slate-500 font-mono">
                                 {batchProgress.current} / {batchProgress.total}
@@ -824,7 +877,7 @@ const App: React.FC = () => {
                           ) : (
                              <Sparkles size={20} />
                           )}
-                          <span>Genereer Klank</span>
+                          <span>{t.generateAudio}</span>
                         </button>
 
                         <button
@@ -833,7 +886,7 @@ const App: React.FC = () => {
                             className="w-full py-3 px-4 rounded-xl border-2 border-indigo-100 text-indigo-600 font-semibold hover:bg-indigo-50 hover:border-indigo-200 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                         >
                              <Layers size={18} />
-                            Generate Audio for All Blocks
+                            {t.generateAll}
                         </button>
                     </>
                 )}
