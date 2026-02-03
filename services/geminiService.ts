@@ -1,4 +1,5 @@
-import { GoogleGenAI } from "@google/genai";
+
+import { GoogleGenAI, Modality } from "@google/genai";
 import { VoiceName } from "../types";
 
 // Initialize the client. API_KEY is guaranteed to be in process.env.
@@ -16,8 +17,8 @@ export async function generateSpeech(text: string, voice: VoiceName): Promise<st
         parts: [{ text: text.trim() }] 
       }],
       config: {
-        // Use string literal "AUDIO" to avoid potential runtime issues with Modality enum imports
-        responseModalities: ["AUDIO" as any],
+        // Correct usage of Modality enum from @google/genai
+        responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: { voiceName: voice },
@@ -46,7 +47,8 @@ export async function generateSpeech(text: string, voice: VoiceName): Promise<st
 export async function translateText(text: string, targetLanguage: 'English' | 'Afrikaans'): Promise<string> {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      // Recommended model for simple translation tasks
+      model: "gemini-3-flash-preview",
       contents: [{
         parts: [{ 
           text: `Translate the following text to ${targetLanguage}. Keep the tone professional and educational. Do not include any preamble or explanation, just the translated text. Text: "${text}"` 
