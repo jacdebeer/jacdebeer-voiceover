@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Mic, BookOpen, Sparkles, AlertCircle, ArrowRightLeft, ChevronLeft, ChevronRight, ScanSearch, FileUp, Gauge, Volume2, Loader, Square, Layers, Wand2, Trash2, X, HelpCircle, CheckCircle2 } from 'lucide-react';
+import { Mic, BookOpen, Sparkles, AlertCircle, ArrowRightLeft, ChevronLeft, ChevronRight, ScanSearch, FileUp, Gauge, Volume2, Loader, Square, Layers, Wand2, Trash2, X, HelpCircle, CheckCircle2, Plus, Scissors, Combine, ArrowBigRightDash } from 'lucide-react';
 import { VoiceName, VOICE_OPTIONS, AudioState, CoursePage, VoiceOption } from './types';
 import { generateSpeech, translateText } from './services/geminiService';
 import { decodeBase64, pcmToWavBlob } from './utils/audioUtils';
@@ -23,7 +23,7 @@ const TRANSLATIONS = {
     voiceStudio: "Voice Studio",
     voiceStudioSubtitle: "Choose your narrator",
     generateAudio: "Generate Audio",
-    generateAll: "Generate All Blocks",
+    generateAll: "Generate All Slides",
     generatingBatch: "Generating Batch...",
     selectVoice: "Select Voice",
     speed: "Speed",
@@ -31,16 +31,20 @@ const TRANSLATIONS = {
     extractPage: "Extract Page",
     fixText: "Fix Text",
     translate: "Translate",
-    courseContent: "Course Content",
-    deleteBlock: "Delete block",
-    block: "Block",
+    courseContent: "Slide Content",
+    deleteBlock: "Delete slide",
+    block: "Slide",
+    addBlock: "Add Slide",
+    splitBlock: "Split at cursor",
+    mergeBlock: "Merge with next",
+    moveSelection: "Move selection to next",
     of: "of",
     chars: "characters",
     fixTextTooltip: "Fix garbled characters (decoding repair)",
     multilingual: "MULTILINGUAL",
     steps: {
       1: "Step 1: Upload or Extract. Start by bringing your content into the editor.",
-      2: "Step 2: Refine. Use 'Fix Text' or 'Translate' to prepare your script.",
+      2: "Step 2: Refine. Split or Merge slides to match your presentation flow.",
       3: "Step 3: Narrator. Select a male or female voice that fits your content.",
       4: "Step 4: Generate. Click 'Generate Audio' to create the high-quality speech.",
       5: "Step 5: Review. Play back the audio and download it for your website."
@@ -65,7 +69,7 @@ const TRANSLATIONS = {
     voiceStudio: "Stem Studio",
     voiceStudioSubtitle: "Kies jou verteller",
     generateAudio: "Genereer Klank",
-    generateAll: "Genereer Alle Blokke",
+    generateAll: "Genereer Alle Skyfies",
     generatingBatch: "Genereer Tans...",
     selectVoice: "Kies Stem",
     speed: "Spoed",
@@ -73,16 +77,20 @@ const TRANSLATIONS = {
     extractPage: "Onttrek Bladsy",
     fixText: "Herstel Teks",
     translate: "Vertaal",
-    courseContent: "Kursus Inhoud",
-    deleteBlock: "Verwyder blok",
-    block: "Blok",
+    courseContent: "Skyfie Inhoud",
+    deleteBlock: "Verwyder skyfie",
+    block: "Skyfie",
+    addBlock: "Voeg skyfie by",
+    splitBlock: "Verdeel by wyser",
+    mergeBlock: "Voeg saam met volgende",
+    moveSelection: "Skuif seleksie na volgende",
     of: "van",
     chars: "karakters",
     fixTextTooltip: "Herstel onleesbare karakters",
     multilingual: "MEERTALIG",
     steps: {
       1: "Stap 1: Laai op. Begin deur jou inhoud in die redigeerder te kry.",
-      2: "Stap 2: Verfyn. Gebruik 'Herstel Teks' of 'Vertaal' vir jou skrip.",
+      2: "Stap 2: Verfyn. Verdeel of voeg skyfies saam vir jou aanbieding.",
       3: "Stap 3: Verteller. Kies 'n manlike of vroulike stem vir jou inhoud.",
       4: "Stap 4: Genereer. Klik 'Genereer Klank' vir hoë-kwaliteit spraak.",
       5: "Stap 5: Hersien. Luister na die klank en laai dit af vir jou webwerf."
@@ -140,6 +148,7 @@ const App: React.FC = () => {
   const mediaSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentBlobUrlRef = useRef<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const t = TRANSLATIONS[language];
 
@@ -221,9 +230,10 @@ const App: React.FC = () => {
     setText(newText);
     setPages(prev => {
       const newPages = [...prev];
-      newPages[pageIndex] = { ...newPages[pageIndex], text: newText };
+      newPages[pageIndex] = { ...newPages[pageIndex], text: newText, audioData: undefined };
       return newPages;
     });
+    setAudioState(prev => ({ ...prev, hasAudio: false }));
   };
 
   const handleExtract = () => {
@@ -235,7 +245,7 @@ const App: React.FC = () => {
     if (nodeList.length === 0) { alert("No blocks found."); return; }
     const extractedPages: CoursePage[] = Array.from(nodeList).map((el, i) => ({
       id: i + 1,
-      text: (el as HTMLElement).innerText.trim() || `(Block ${i + 1})`
+      text: (el as HTMLElement).innerText.trim() || `(Slide ${i + 1})`
     }));
     stopAudio();
     setPages(extractedPages);
@@ -336,7 +346,7 @@ const App: React.FC = () => {
     if (!currentBlobUrlRef.current) return;
     const a = document.createElement('a');
     a.href = currentBlobUrlRef.current;
-    a.download = `voiceover-block-${pageIndex + 1}.wav`;
+    a.download = `voiceover-slide-${pageIndex + 1}.wav`;
     a.click();
   };
 
@@ -424,6 +434,76 @@ const App: React.FC = () => {
     }
   };
 
+  const handleAddBlock = () => {
+    const newPage: CoursePage = { id: Date.now(), text: "" };
+    const newPages = [...pages];
+    newPages.splice(pageIndex + 1, 0, newPage);
+    setPages(newPages);
+    handlePageChange('next');
+  };
+
+  const handleSplitAtCursor = () => {
+    if (!textareaRef.current) return;
+    const start = textareaRef.current.selectionStart;
+    const end = textareaRef.current.selectionEnd;
+    
+    const beforeText = text.substring(0, start).trim();
+    const afterText = text.substring(end).trim();
+
+    const newPages = [...pages];
+    // Update current block
+    newPages[pageIndex] = { ...newPages[pageIndex], text: beforeText, audioData: undefined };
+    // Insert new block
+    newPages.splice(pageIndex + 1, 0, { id: Date.now(), text: afterText });
+    
+    setPages(newPages);
+    setText(beforeText);
+    setAudioState(prev => ({ ...prev, hasAudio: false }));
+  };
+
+  const handleMergeNext = () => {
+    if (pageIndex >= pages.length - 1) return;
+    
+    const nextBlock = pages[pageIndex + 1];
+    const combinedText = (text.trim() + " " + nextBlock.text.trim()).trim();
+    
+    const newPages = pages.filter((_, i) => i !== pageIndex + 1);
+    newPages[pageIndex] = { ...newPages[pageIndex], text: combinedText, audioData: undefined };
+    
+    setPages(newPages);
+    setText(combinedText);
+    setAudioState(prev => ({ ...prev, hasAudio: false }));
+  };
+
+  const handleMoveSelection = () => {
+    if (!textareaRef.current) return;
+    const start = textareaRef.current.selectionStart;
+    const end = textareaRef.current.selectionEnd;
+    if (start === end) return;
+
+    const selectedText = text.substring(start, end).trim();
+    const remainingText = (text.substring(0, start) + text.substring(end)).replace(/\s+/g, ' ').trim();
+
+    const newPages = [...pages];
+    newPages[pageIndex] = { ...newPages[pageIndex], text: remainingText, audioData: undefined };
+
+    if (pageIndex < pages.length - 1) {
+      // Append to next block
+      newPages[pageIndex+1] = { 
+        ...newPages[pageIndex+1], 
+        text: (selectedText + " " + newPages[pageIndex+1].text).trim(), 
+        audioData: undefined 
+      };
+    } else {
+      // Create new block
+      newPages.push({ id: Date.now(), text: selectedText });
+    }
+
+    setPages(newPages);
+    setText(remainingText);
+    setAudioState(prev => ({ ...prev, hasAudio: false }));
+  };
+
   const handleVoicePreview = async (voice: VoiceOption) => {
     if (previewStatus || audioState.isPlaying) return;
     try {
@@ -492,20 +572,27 @@ const App: React.FC = () => {
           </div>
           <div className="flex-1 flex flex-col min-h-0 bg-white shadow-sm border border-slate-200 overflow-hidden">
             <div className="flex-none px-4 py-2 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-               <div className="flex items-center space-x-2 text-[11px] text-slate-500 font-bold uppercase tracking-wider"><BookOpen size={13} /><span>{t.courseContent}</span></div>
+               <div className="flex items-center space-x-3 text-[11px] text-slate-500 font-bold uppercase tracking-wider">
+                  <div className="flex items-center gap-1.5"><Layers size={13} /><span>{t.courseContent}</span></div>
+                  <div className="w-px h-3 bg-slate-200"></div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={handleSplitAtCursor} className="flex items-center gap-1 text-slate-400 hover:text-indigo-600 transition-colors" title={t.splitBlock}><Scissors size={12} /><span>Split</span></button>
+                    <button onClick={handleMergeNext} disabled={pageIndex === pages.length - 1} className="flex items-center gap-1 text-slate-400 hover:text-indigo-600 transition-colors disabled:opacity-30" title={t.mergeBlock}><Combine size={12} /><span>Merge</span></button>
+                    <button onClick={handleMoveSelection} className="flex items-center gap-1 text-slate-400 hover:text-indigo-600 transition-colors" title={t.moveSelection}><ArrowBigRightDash size={12} /><span>Move Selection</span></button>
+                  </div>
+               </div>
                <div className="flex items-center gap-2">
-                   <button onClick={handleDeleteBlock} className="p-1.5 text-slate-300 hover:text-rose-500 rounded-lg transition-colors"><Trash2 size={15} /></button>
-                   {pages.length > 1 && (
-                     <div className="flex items-center space-x-1 bg-white rounded-lg border border-slate-200 p-0.5 shadow-sm">
-                        <button onClick={() => handlePageChange('prev')} disabled={pageIndex === 0} className="p-1 hover:bg-slate-100 rounded disabled:opacity-20"><ChevronLeft size={14} /></button>
-                        <span className="text-[10px] font-bold text-slate-700 w-20 text-center uppercase">{t.block} {pageIndex + 1}/{pages.length}</span>
-                        <button onClick={() => handlePageChange('next')} disabled={pageIndex === pages.length - 1} className="p-1 hover:bg-slate-100 rounded disabled:opacity-20"><ChevronRight size={14} /></button>
-                     </div>
-                   )}
+                   <button onClick={handleDeleteBlock} className="p-1.5 text-slate-300 hover:text-rose-500 rounded-lg transition-colors" title={t.deleteBlock}><Trash2 size={15} /></button>
+                   <div className="flex items-center space-x-1 bg-white rounded-lg border border-slate-200 p-0.5 shadow-sm">
+                      <button onClick={() => handlePageChange('prev')} disabled={pageIndex === 0} className="p-1 hover:bg-slate-100 rounded disabled:opacity-20"><ChevronLeft size={14} /></button>
+                      <span className="text-[10px] font-bold text-slate-700 w-20 text-center uppercase">{t.block} {pageIndex + 1}/{pages.length}</span>
+                      <button onClick={() => handlePageChange('next')} disabled={pageIndex === pages.length - 1} className="p-1 hover:bg-slate-100 rounded disabled:opacity-20"><ChevronRight size={14} /></button>
+                      <button onClick={handleAddBlock} className="p-1 hover:bg-indigo-50 text-indigo-600 rounded" title={t.addBlock}><Plus size={14} /></button>
+                   </div>
                </div>
             </div>
             <div className="flex-1 overflow-hidden relative">
-              <textarea value={text} onChange={(e) => handleTextChange(e.target.value)} className="absolute inset-0 w-full h-full p-6 resize-none focus:outline-none text-slate-700 leading-relaxed text-base bg-transparent overflow-y-auto custom-scrollbar" placeholder="Enter content..." spellCheck={false} />
+              <textarea ref={textareaRef} value={text} onChange={(e) => handleTextChange(e.target.value)} className="absolute inset-0 w-full h-full p-6 resize-none focus:outline-none text-slate-700 leading-relaxed text-base bg-transparent overflow-y-auto custom-scrollbar" placeholder="Enter content for this slide..." spellCheck={false} />
             </div>
             <div className="flex-none px-4 py-2 bg-slate-50 border-t border-slate-100 text-right"><span className="text-[10px] text-slate-400 font-bold">{text.length} {t.chars}</span></div>
           </div>
@@ -566,14 +653,14 @@ const App: React.FC = () => {
                  <Controls isPlaying={audioState.isPlaying} onPlayPause={handlePlayPause} onReset={stopAudio} onDownload={handleDownload} disabled={!audioState.hasAudio || audioState.isLoading} />
               </div>
               
-              <div className="flex-1 flex flex-col min-h-0 relative">
+              <div className="flex-1 flex flex-col min-h-0 relative min-h-0">
                  {currentStep === 3 && <StepPopup step={3} />}
                  <div className="flex-none flex justify-between items-center mb-3">
                     <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">{t.selectVoice}</span>
                     <span className="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-extrabold tracking-tighter">{t.multilingual}</span>
                  </div>
                  
-                 <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 custom-scrollbar pb-8">
+                 <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 custom-scrollbar pb-8 min-h-0">
                    {VOICE_OPTIONS.map((voice) => {
                      const meta = (t.voiceLabels as any)[voice.id];
                      const isSel = selectedVoiceId === voice.id;
