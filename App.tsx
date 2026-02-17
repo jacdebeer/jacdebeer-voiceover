@@ -562,38 +562,39 @@ const App: React.FC = () => {
                        <span className={audioState.isPlaying ? "animate-pulse text-emerald-400" : "text-slate-500"}>●</span>{formatTime(audioState.currentTime)} / {formatTime(audioState.duration)}
                     </div>
                  </div>
-                 <div className="mt-8 flex-1 flex items-center justify-center opacity-80 group-hover:opacity-100 transition-opacity"><Visualizer analyser={analyserRef.current} isPlaying={audioState.isPlaying} /></div>
+                 <div className="mt-8 flex-1 flex items-center justify-center opacity-80 group-hover:opacity-100 transition-opacity min-h-[60px]"><Visualizer analyser={analyserRef.current} isPlaying={audioState.isPlaying} /></div>
                  <Controls isPlaying={audioState.isPlaying} onPlayPause={handlePlayPause} onReset={stopAudio} onDownload={handleDownload} disabled={!audioState.hasAudio || audioState.isLoading} />
               </div>
               
-              <div className="flex-1 overflow-hidden flex flex-col relative">
+              <div className="flex-1 flex flex-col min-h-0 relative">
                  {currentStep === 3 && <StepPopup step={3} />}
                  <div className="flex-none flex justify-between items-center mb-3">
                     <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">{t.selectVoice}</span>
                     <span className="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-extrabold tracking-tighter">{t.multilingual}</span>
                  </div>
-                 <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 custom-scrollbar">
+                 
+                 <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 custom-scrollbar pb-8">
                    {VOICE_OPTIONS.map((voice) => {
                      const meta = (t.voiceLabels as any)[voice.id];
                      const isSel = selectedVoiceId === voice.id;
                      return (
-                       <div key={voice.id} onClick={() => { setSelectedVoiceId(voice.id); if(currentStep === 3) setCurrentStep(4); }} className={`group p-3 rounded-xl border-2 cursor-pointer transition-all relative ${isSel ? 'border-indigo-600 bg-indigo-50 shadow-sm' : 'border-slate-50 hover:border-indigo-100 hover:bg-white hover:shadow-md'}`}>
+                       <div key={voice.id} onClick={() => { setSelectedVoiceId(voice.id); if(currentStep === 3) setCurrentStep(4); }} className={`group p-2.5 rounded-xl border-2 cursor-pointer transition-all relative ${isSel ? 'border-indigo-600 bg-indigo-50 shadow-sm' : 'border-slate-50 hover:border-indigo-100 hover:bg-white hover:shadow-md'}`}>
                           <div className="flex items-center justify-between">
-                             <div className="flex items-center space-x-3">
-                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold transition-colors ${isSel ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-600'}`}>{meta.label[0]}</div>
+                             <div className="flex items-center space-x-2.5">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-extrabold transition-colors ${isSel ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-600'}`}>{meta.label[0]}</div>
                                 <div>
-                                   <div className="text-[13px] font-extrabold text-slate-800 leading-none mb-1 flex items-center gap-1.5">
+                                   <div className="text-[12px] font-extrabold text-slate-800 leading-none mb-1 flex items-center gap-1.5">
                                      {meta.label} 
-                                     {isSel && <CheckCircle2 size={12} className="text-indigo-600" />}
+                                     {isSel && <CheckCircle2 size={11} className="text-indigo-600" />}
                                      {voice.isAfrVariant && <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded uppercase font-black">AFR</span>}
                                    </div>
-                                   <div className="text-[10px] text-slate-400 font-bold leading-none">{meta.desc}</div>
+                                   <div className="text-[9px] text-slate-400 font-bold leading-none">{meta.desc}</div>
                                 </div>
                              </div>
-                             <div className="flex items-center gap-2">
-                                <span className={`text-[8px] px-2 py-0.5 rounded-full font-black tracking-widest ${voice.gender === 'Female' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>{voice.gender.toUpperCase()}</span>
+                             <div className="flex items-center gap-1.5">
+                                <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-black tracking-widest ${voice.gender === 'Female' ? 'bg-pink-50 text-pink-500' : 'bg-blue-50 text-blue-500'}`}>{voice.gender.toUpperCase()}</span>
                                 <button onClick={(e) => { e.stopPropagation(); handleVoicePreview(voice); }} className="p-1.5 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-100 transition-colors">
-                                   {previewStatus?.id === voice.id && previewStatus?.status === 'loading' ? <Loader className="animate-spin" size={14} /> : <Volume2 size={16} />}
+                                   {previewStatus?.id === voice.id && previewStatus?.status === 'loading' ? <Loader className="animate-spin" size={12} /> : <Volume2 size={14} />}
                                 </button>
                              </div>
                           </div>
@@ -601,6 +602,8 @@ const App: React.FC = () => {
                      );
                    })}
                  </div>
+                 {/* Visual hint for scrolling */}
+                 <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent pointer-events-none rounded-b-2xl"></div>
               </div>
            </div>
         </div>
