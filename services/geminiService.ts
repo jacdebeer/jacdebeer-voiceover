@@ -48,7 +48,7 @@ export async function translateText(text: string, targetLanguage: 'English' | 'A
   try {
     const response = await ai.models.generateContent({
       // Recommended model for simple translation tasks
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.1-flash-lite",
       contents: [{
         parts: [{ 
           text: `Translate the following text to ${targetLanguage}. Keep the tone professional and educational. Do not include any preamble or explanation, just the translated text. Text: "${text}"` 
