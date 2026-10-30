@@ -1,4 +1,5 @@
 import { GoogleGenAI, Modality } from '@google/genai';
+import { getUser } from '@netlify/identity';
 import type { Config } from '@netlify/functions';
 
 // Same endpoints and response shapes as the Express routes in server.ts,
@@ -197,6 +198,10 @@ export default async (req: Request): Promise<Response> => {
   if (route === '/api/health' && req.method === 'GET') {
     return json({ status: 'ok', timestamp: Date.now(), keyConfigured: Boolean(process.env.GEMINI_API_KEY) });
   }
+  // Everything below needs a signed-in (invited) user, because each call spends Gemini quota.
+  const user = await getUser();
+  if (!user) return json({ error: 'Please sign in.' }, 401);
+
   if (route === '/api/voices' && req.method === 'GET') {
     try {
       const q = new URL(req.url).searchParams;
