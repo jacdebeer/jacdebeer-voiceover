@@ -1,5 +1,6 @@
 import { GoogleGenAI, Modality } from '@google/genai';
 import { getUser } from '@netlify/identity';
+import { getStore } from '@netlify/blobs';
 import type { Config } from '@netlify/functions';
 
 // Same endpoints and response shapes as the Express routes in server.ts,
@@ -279,6 +280,56 @@ async function listVoices(debug: boolean, extra: URLSearchParams): Promise<Respo
   return json(debug ? { voices: usable, raw } : { voices: usable });
 }
 
+const WORKSPACE_STORE = 'gsavoice-workspaces';
+const MAX_WORKSPACE_BYTES = 1024 * 1024;
+const MAX_BLOB_AUDIO_BYTES = 4 * 1024 * 1024;
+const AUDIO_KEY = /^[A-Za-z0-9-]{1,40}$/;
+
+/** Per-user saved work: one JSON document for the text and one blob per audio clip. */
+async function workspaceRoute(req: Request, route: string, userId: string): Promise<Response | null> {
+  if (route !== '/api/workspace' && !route.startsWith('/api/workspace/audio/')) return null;
+  const store = getStore(WORKSPACE_STORE);
+  const owner = encodeURIComponent(userId);
+
+  if (route === '/api/workspace') {
+    const key = `${owner}/workspace`;
+    if (req.method === 'GET') {
+      const workspace = await store.get(key, { type: 'json' });
+      return json({ workspace: workspace ?? null });
+    }
+    if (req.method === 'PUT') {
+      const raw = await req.text();
+      if (raw.length > MAX_WORKSPACE_BYTES) return json({ error: 'Saved work is too large.' }, 413);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return json({ error: 'Invalid request body' }, 400);
+      }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json({ error: 'Invalid request body' }, 400);
+      await store.setJSON(key, parsed);
+      return json({ ok: true });
+    }
+    return json({ error: 'Method not allowed' }, 405);
+  }
+
+  const audioId = route.slice('/api/workspace/audio/'.length);
+  if (!AUDIO_KEY.test(audioId)) return json({ error: 'Invalid audio key' }, 400);
+  const key = `${owner}/audio/${audioId}`;
+  if (req.method === 'GET') {
+    const data = await store.get(key, { type: 'arrayBuffer' });
+    if (!data) return json({ error: 'Not found' }, 404);
+    return new Response(data, { headers: { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'private, no-store' } });
+  }
+  if (req.method === 'PUT') {
+    const data = await req.arrayBuffer();
+    if (data.byteLength === 0 || data.byteLength > MAX_BLOB_AUDIO_BYTES) return json({ error: 'Audio is empty or too large to save.' }, 413);
+    await store.set(key, data);
+    return json({ ok: true });
+  }
+  return json({ error: 'Method not allowed' }, 405);
+}
+
 export default async (req: Request): Promise<Response> => {
   const route = new URL(req.url).pathname.replace(/\/+$/, '');
 
@@ -305,6 +356,13 @@ export default async (req: Request): Promise<Response> => {
       console.error('ElevenLabs voice list failed:', error);
       return json({ error: 'Could not load ElevenLabs voices.' }, 502);
     }
+  }
+  try {
+    const saved = await workspaceRoute(req, route, user.id);
+    if (saved) return saved;
+  } catch (error) {
+    console.error('Workspace request failed:', error);
+    return json({ error: 'Could not reach saved work.' }, 502);
   }
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 

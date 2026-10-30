@@ -7,7 +7,8 @@ import {
 import { VOICE_OPTIONS, VoiceOption } from '../types';
 import { transcribeAudio, generateSpeechForVoice } from '../services/geminiService';
 import { VoicePicker } from './VoicePicker';
-import { base64ToWavBlob, speakWithWebSpeech, stopWebSpeech } from '../utils/audioUtils';
+import { loadAudio, saveAudio } from '../services/workspaceService';
+import { base64ToWavBlob, decodeBase64, pcmToWavBlob, speakWithWebSpeech, stopWebSpeech } from '../utils/audioUtils';
 
 const triggerDownload = (url: string, filename: string) => {
   const a = document.createElement('a');
@@ -23,6 +24,8 @@ interface TranscriptionPanelProps {
   currentLanguage: 'en' | 'af';
   onApplyToSlide: (text: string) => void;
   onApplyAsNewSlides: (text: string) => void;
+  transcribedText: string;
+  onTranscribedTextChange: (text: string) => void;
   voices: VoiceOption[];
   selectedVoiceId: string;
   onSelectVoiceId: (id: string) => void;
@@ -32,6 +35,8 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
   currentLanguage,
   onApplyToSlide,
   onApplyAsNewSlides,
+  transcribedText,
+  onTranscribedTextChange: setTranscribedText,
   voices,
   selectedVoiceId,
   onSelectVoiceId,
@@ -41,7 +46,6 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [transcribedText, setTranscribedText] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -51,6 +55,13 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
   const [isPlayingVoiceover, setIsPlayingVoiceover] = useState(false);
   const [previewVoiceId, setPreviewVoiceId] = useState<string | null>(null);
 
+  const recognitionRef = useRef<any>(null);
+  const liveActiveRef = useRef(false);
+  const liveBaseRef = useRef('');
+  const [liveSupported] = useState(
+    () => typeof window !== 'undefined' && Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+  );
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
@@ -59,6 +70,16 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
 
   // Filter realistic Afrikaans voices
   const [showVoicePicker, setShowVoicePicker] = useState(false);
+
+  // Bring back the last saved voiceover when the panel opens
+  useEffect(() => {
+    let cancelled = false;
+    loadAudio('voiceover').then((bytes) => {
+      if (cancelled || !bytes) return;
+      setVoiceoverUrl((prev) => prev ?? URL.createObjectURL(pcmToWavBlob(bytes, 24000)));
+    });
+    return () => { cancelled = true; };
+  }, []);
   const currentVoice =
     voices.find(v => v.id === selectedVoiceId) ||
     VOICE_OPTIONS.find(v => v.id === selectedVoiceId) ||
@@ -66,11 +87,53 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
 
   useEffect(() => {
     return () => {
+      liveActiveRef.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       if (voiceoverUrl) URL.revokeObjectURL(voiceoverUrl);
     };
   }, [audioUrl, voiceoverUrl]);
+
+  // Shows words on screen while you speak, using the browser's own speech recognition.
+  // The final text still comes from the Gemini transcription after you stop.
+  const startLiveCaptions = () => {
+    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!Recognition) return;
+    liveBaseRef.current = transcribedText.trim();
+    liveActiveRef.current = true;
+    let finalText = '';
+    const start = () => {
+      const rec = new Recognition();
+      rec.lang = currentLanguage === 'af' ? 'af-ZA' : 'en-ZA';
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.onresult = (event: any) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const piece = event.results[i][0].transcript;
+          if (event.results[i].isFinal) finalText += piece + ' ';
+          else interim += piece;
+        }
+        const live = (finalText + interim).trim();
+        setTranscribedText([liveBaseRef.current, live].filter(Boolean).join(' '));
+      };
+      rec.onend = () => {
+        if (liveActiveRef.current) {
+          try { start(); } catch { /* recognition could not restart */ }
+        }
+      };
+      rec.onerror = () => { /* the recording itself keeps going */ };
+      recognitionRef.current = rec;
+      rec.start();
+    };
+    try { start(); } catch { liveActiveRef.current = false; }
+  };
+
+  const stopLiveCaptions = () => {
+    liveActiveRef.current = false;
+    try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
+    recognitionRef.current = null;
+  };
 
   const startRecording = async () => {
     setErrorMessage(null);
@@ -96,6 +159,7 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
       };
 
       mediaRecorder.start(250);
+      startLiveCaptions();
       setIsRecording(true);
       setRecordingSeconds(0);
 
@@ -111,6 +175,7 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
+      stopLiveCaptions();
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       if (timerRef.current) clearInterval(timerRef.current);
@@ -156,6 +221,7 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
     setErrorMessage(null);
     try {
       const base64 = await generateSpeechForVoice(currentVoice, transcribedText, currentLanguage === 'af');
+      void saveAudio('voiceover', decodeBase64(base64));
       const blob = base64ToWavBlob(base64);
       if (voiceoverUrl) URL.revokeObjectURL(voiceoverUrl);
       const newUrl = URL.createObjectURL(blob);
@@ -319,6 +385,14 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
                     </span>
                   )}
                 </div>
+
+                {isRecording && (
+                  <p className="text-[10px] font-bold text-violet-600 mt-2">
+                    {liveSupported
+                      ? (currentLanguage === 'af' ? "Woorde verskyn hieronder terwyl jy praat" : "Words appear below as you speak")
+                      : (currentLanguage === 'af' ? "Regstreekse teks werk in Chrome of Edge. Transkribeer na opname." : "Live text needs Chrome or Edge. Transcribe after recording.")}
+                  </p>
+                )}
 
                 <div className="mt-2">
                   {isRecording ? (
