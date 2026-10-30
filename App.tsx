@@ -824,7 +824,7 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-slate-50 font-sans selection:bg-indigo-100">
+    <div className="h-full flex flex-col overflow-hidden bg-slate-50 font-sans selection:bg-indigo-100">
       
       {/* Top Application Bar */}
       <header className="flex-none flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200 max-w-[1600px] mx-auto w-full">

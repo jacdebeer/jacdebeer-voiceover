@@ -144,8 +144,8 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
   if (!email) return <SignIn />;
 
   return (
-    <>
-      <div className="fixed top-2 right-2 z-50 flex items-center gap-2 bg-white/90 backdrop-blur border border-slate-200 rounded-full pl-3 pr-1 py-1 shadow-sm text-[11px] text-slate-600">
+    <div className="h-screen flex flex-col">
+      <div className="flex-none flex items-center justify-end gap-2 bg-white border-b border-slate-200 px-4 py-1 text-[11px] text-slate-600">
         <span className="hidden sm:inline" title={email}>{email}</span>
         <button
           onClick={async () => { await logout(); setEmail(null); }}
@@ -154,7 +154,7 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
           Sign out
         </button>
       </div>
-      {children}
-    </>
+      <div className="flex-1 min-h-0">{children}</div>
+    </div>
   );
 };
