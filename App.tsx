@@ -8,6 +8,7 @@ import {
 import { VoiceName, VOICE_OPTIONS, AudioState, CoursePage, VoiceOption } from './types';
 import { generateSpeechForVoice, translateText, enhanceConversationalScript, fetchLibraryVoices, fetchElevenLabsVoices } from './services/geminiService';
 import { decodeBase64, pcmToWavBlob, base64ToWavBlob, speakWithWebSpeech, stopWebSpeech } from './utils/audioUtils';
+import { loadWorkspace, saveWorkspace, saveAudio, loadAudio } from './services/workspaceService';
 import { Visualizer } from './components/Visualizer';
 import { VoicePicker } from './components/VoicePicker';
 import { Controls } from './components/Controls';
@@ -185,6 +186,9 @@ const App: React.FC = () => {
   const [pageIndex, setPageIndex] = useState(0);
   const [text, setText] = useState<string>(DEFAULT_TEXT_AF);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>('sannie');
+  const [transcribedText, setTranscribedText] = useState<string>('');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const hydratedRef = useRef(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [audioState, setAudioState] = useState<AudioState>({
     isPlaying: false,
@@ -305,6 +309,54 @@ const App: React.FC = () => {
     }
   };
 
+  // Restore saved work (text, voice, transcript and audio) once after sign-in
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const saved = await loadWorkspace();
+      if (cancelled) return;
+      if (saved) {
+        const restored: CoursePage[] = await Promise.all(
+          saved.pages.map(async (p) => ({
+            id: p.id,
+            text: p.text,
+            audioData: p.hasAudio ? (await loadAudio(`p-${p.id}`)) ?? undefined : undefined,
+          }))
+        );
+        if (cancelled) return;
+        const idx = Math.min(Math.max(saved.pageIndex || 0, 0), restored.length - 1);
+        setPages(restored);
+        setPageIndex(idx);
+        setText(restored[idx].text);
+        if (saved.voiceId) setSelectedVoiceId(saved.voiceId);
+        setTranscribedText(saved.transcript || '');
+        const current = restored[idx];
+        if (current.audioData) {
+          const url = URL.createObjectURL(pcmToWavBlob(current.audioData, 24000));
+          currentBlobUrlRef.current = url;
+          if (audioRef.current) {
+            audioRef.current.src = url;
+            audioRef.current.load();
+          }
+          setAudioState(prev => ({ ...prev, hasAudio: true }));
+        }
+      }
+      hydratedRef.current = true;
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Save text, voice and transcript shortly after each change
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    setSaveStatus('saving');
+    const timer = setTimeout(async () => {
+      const ok = await saveWorkspace({ pages, pageIndex, voiceId: selectedVoiceId, transcript: transcribedText });
+      setSaveStatus(ok ? 'saved' : 'error');
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [pages, pageIndex, selectedVoiceId, transcribedText]);
+
   const handleTextChange = (newText: string) => {
     setText(newText);
     setPages(prev => {
@@ -385,6 +437,8 @@ const App: React.FC = () => {
       ensureAudioContext();
       
       const audioBytes = decodeBase64(base64);
+      const generatedPageId = pages[pageIndex]?.id;
+      if (generatedPageId !== undefined) void saveAudio(`p-${generatedPageId}`, audioBytes);
       setPages(prev => {
         const newPages = [...prev];
         newPages[pageIndex] = { ...newPages[pageIndex], audioData: audioBytes };
@@ -435,6 +489,7 @@ const App: React.FC = () => {
         try {
           const base64 = await generateSpeechForVoice(selectedVoice, page.text, language === 'af');
           const audioBytes = decodeBase64(base64);
+          void saveAudio(`p-${page.id}`, audioBytes);
           updatedPages[i] = { ...updatedPages[i], audioData: audioBytes };
           setPages([...updatedPages]);
           if (i === pageIndex) {
@@ -844,6 +899,15 @@ const App: React.FC = () => {
           >
             <HelpCircle size={19} />
           </button>
+          {saveStatus !== 'idle' && (
+            <span className={`text-[10px] font-bold ${saveStatus === 'error' ? 'text-rose-500' : 'text-slate-400'}`}>
+              {saveStatus === 'saving'
+                ? (language === 'af' ? 'Stoor...' : 'Saving...')
+                : saveStatus === 'saved'
+                ? (language === 'af' ? 'Gestoor' : 'Saved')
+                : (language === 'af' ? 'Kon nie stoor nie' : 'Not saved')}
+            </span>
+          )}
           <div className="flex bg-white rounded-lg p-0.5 shadow-sm border border-slate-200">
             <button 
               onClick={() => handleLanguageToggle('en')} 
@@ -873,6 +937,8 @@ const App: React.FC = () => {
             currentLanguage={language}
             onApplyToSlide={handleApplyTranscriptionToCurrentSlide}
             onApplyAsNewSlides={handleApplyTranscriptionAsNewSlides}
+            transcribedText={transcribedText}
+            onTranscribedTextChange={setTranscribedText}
             voices={allVoices}
             selectedVoiceId={selectedVoiceId}
             onSelectVoiceId={setSelectedVoiceId}
