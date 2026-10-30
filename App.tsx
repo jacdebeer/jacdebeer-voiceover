@@ -6,9 +6,10 @@ import {
   Radio, FileText, AudioWaveform, MessageSquare
 } from 'lucide-react';
 import { VoiceName, VOICE_OPTIONS, AudioState, CoursePage, VoiceOption } from './types';
-import { generateSpeech, translateText, enhanceConversationalScript, fetchLibraryVoices } from './services/geminiService';
+import { generateSpeechForVoice, translateText, enhanceConversationalScript, fetchLibraryVoices, fetchElevenLabsVoices } from './services/geminiService';
 import { decodeBase64, pcmToWavBlob, base64ToWavBlob, speakWithWebSpeech, stopWebSpeech } from './utils/audioUtils';
 import { Visualizer } from './components/Visualizer';
+import { VoicePicker } from './components/VoicePicker';
 import { Controls } from './components/Controls';
 import { TranscriptionPanel } from './components/TranscriptionPanel';
 import { LiveConversationModal } from './components/LiveConversationModal';
@@ -178,7 +179,7 @@ const App: React.FC = () => {
       return 'af';
     }
   });
-  const [voiceCategoryFilter, setVoiceCategoryFilter] = useState<string>('all');
+  const [showVoicePicker, setShowVoicePicker] = useState(false);
   
   const [pages, setPages] = useState<CoursePage[]>([{ id: 1, text: DEFAULT_TEXT_AF }]);
   const [pageIndex, setPageIndex] = useState(0);
@@ -216,8 +217,8 @@ const App: React.FC = () => {
   const [libraryVoices, setLibraryVoices] = useState<VoiceOption[]>([]);
   useEffect(() => {
     let cancelled = false;
-    fetchLibraryVoices().then((voices) => {
-      if (!cancelled) setLibraryVoices(voices);
+    Promise.all([fetchLibraryVoices(), fetchElevenLabsVoices()]).then(([gemini, eleven]) => {
+      if (!cancelled) setLibraryVoices([...gemini, ...eleven]);
     });
     return () => { cancelled = true; };
   }, []);
@@ -379,13 +380,7 @@ const App: React.FC = () => {
     abortControllerRef.current = new AbortController();
     try {
       const selectedVoice = getSelectedVoice();
-      const base64 = await generateSpeech(
-        text, 
-        selectedVoice.voiceName, 
-        selectedVoice.stylePrompt, 
-        language === 'af',
-        selectedVoice.isLibrary === true
-      );
+      const base64 = await generateSpeechForVoice(selectedVoice, text, language === 'af');
       setAudioSourceFromBase64(base64);
       ensureAudioContext();
       
@@ -438,13 +433,7 @@ const App: React.FC = () => {
         const page = pages[i];
         if (!page.text || page.audioData) continue;
         try {
-          const base64 = await generateSpeech(
-            page.text, 
-            selectedVoice.voiceName, 
-            selectedVoice.stylePrompt, 
-            language === 'af',
-            selectedVoice.isLibrary === true
-          );
+          const base64 = await generateSpeechForVoice(selectedVoice, page.text, language === 'af');
           const audioBytes = decodeBase64(base64);
           updatedPages[i] = { ...updatedPages[i], audioData: audioBytes };
           setPages([...updatedPages]);
@@ -698,8 +687,16 @@ const App: React.FC = () => {
     if (previewStatus || audioState.isPlaying) return;
     try {
       setPreviewStatus({ id: voice.id, status: 'loading' });
+      if (voice.previewUrl) {
+        const clip = new Audio(voice.previewUrl);
+        clip.onended = () => setPreviewStatus(null);
+        clip.onerror = () => setPreviewStatus(null);
+        await clip.play();
+        setPreviewStatus({ id: voice.id, status: 'playing' });
+        return;
+      }
       const sampleText = language === 'af' ? voice.previewSampleText.af : voice.previewSampleText.en;
-      const base64 = await generateSpeech(sampleText, voice.voiceName, voice.stylePrompt, voice.isAfrVariant, voice.isLibrary === true);
+      const base64 = await generateSpeechForVoice(voice, sampleText, language === 'af');
       const blob = base64ToWavBlob(base64);
       const url = URL.createObjectURL(blob);
       const previewAudio = new Audio(url);
@@ -759,14 +756,6 @@ const App: React.FC = () => {
     const updated = (text ? text + "\n\n" : "") + textToAdd;
     handleTextChange(updated);
   };
-
-  // Filter voices according to category
-  const filteredVoices = allVoices.filter((voice) => {
-    if (voiceCategoryFilter === 'all') return true;
-    if (voiceCategoryFilter === 'afr') return voice.isAfrVariant;
-    if (voiceCategoryFilter === 'intl') return !voice.isAfrVariant;
-    return voice.category === voiceCategoryFilter;
-  });
 
   const StepPopup = ({ step }: { step: number }) => (
     <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-3 w-64 p-3 bg-white border border-indigo-200 rounded-xl shadow-2xl animate-bounce-slow">
@@ -884,6 +873,7 @@ const App: React.FC = () => {
             currentLanguage={language}
             onApplyToSlide={handleApplyTranscriptionToCurrentSlide}
             onApplyAsNewSlides={handleApplyTranscriptionAsNewSlides}
+            voices={allVoices}
             selectedVoiceId={selectedVoiceId}
             onSelectVoiceId={setSelectedVoiceId}
           />
@@ -1131,148 +1121,47 @@ const App: React.FC = () => {
                   />
                 </div>
                 
-                {/* Voice Selection Catalog */}
-                <div className="flex-1 flex flex-col min-h-0 relative">
+                {/* Voice selection: current voice plus pop-up picker */}
+                <div className="flex-none relative">
                   {currentStep === 3 && <StepPopup step={3} />}
-                  
-                  {/* Category Filter Pills */}
-                  <div className="flex-none flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">
-                      {t.selectVoice} ({filteredVoices.length})
-                    </span>
-                    <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-extrabold tracking-wider">
-                      {getSelectedVoice().label}
-                    </span>
-                  </div>
-
-                  <div className="flex-none flex gap-1.5 overflow-x-auto pb-2 custom-scrollbar text-[10px]">
-                    <button
-                      onClick={() => setVoiceCategoryFilter('all')}
-                      className={`px-2.5 py-1 rounded-lg font-bold whitespace-nowrap transition-all ${
-                        voiceCategoryFilter === 'all'
-                          ? 'bg-slate-800 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {t.voiceCategories.all}
-                    </button>
-                    <button
-                      onClick={() => setVoiceCategoryFilter('afr')}
-                      className={`px-2.5 py-1 rounded-lg font-bold whitespace-nowrap transition-all ${
-                        voiceCategoryFilter === 'afr'
-                          ? 'bg-emerald-600 text-white shadow-sm'
-                          : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                      }`}
-                    >
-                      {t.voiceCategories.afr}
-                    </button>
-                    <button
-                      onClick={() => setVoiceCategoryFilter('educator')}
-                      className={`px-2.5 py-1 rounded-lg font-bold whitespace-nowrap transition-all ${
-                        voiceCategoryFilter === 'educator'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {t.voiceCategories.educator}
-                    </button>
-                    <button
-                      onClick={() => setVoiceCategoryFilter('storyteller')}
-                      className={`px-2.5 py-1 rounded-lg font-bold whitespace-nowrap transition-all ${
-                        voiceCategoryFilter === 'storyteller'
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {t.voiceCategories.storyteller}
-                    </button>
-                    <button
-                      onClick={() => setVoiceCategoryFilter('intl')}
-                      className={`px-2.5 py-1 rounded-lg font-bold whitespace-nowrap transition-all ${
-                        voiceCategoryFilter === 'intl'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {t.voiceCategories.intl}
-                    </button>
-                  </div>
-                  
-                  {/* Voice List */}
-                  <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 custom-scrollbar pb-6 min-h-0">
-                    {filteredVoices.map((voice) => {
-                      const meta = (t.voiceLabels as any)[voice.id] || { label: voice.label, desc: voice.description };
-                      const isSel = selectedVoiceId === voice.id;
-                      return (
-                        <div 
-                          key={voice.id} 
-                          onClick={() => { 
-                            setSelectedVoiceId(voice.id); 
-                            if(currentStep === 3) setCurrentStep(4); 
-                          }} 
-                          className={`group p-2.5 rounded-xl border-2 cursor-pointer transition-all relative ${
-                            isSel 
-                              ? 'border-indigo-600 bg-indigo-50/70 shadow-sm' 
-                              : 'border-slate-100 hover:border-indigo-200 hover:bg-white hover:shadow-sm'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2.5">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black transition-colors ${
-                                isSel ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600'
-                              }`}>
-                                {meta.label[0]}
-                              </div>
-                              <div>
-                                <div className="text-[12px] font-extrabold text-slate-800 leading-none mb-1 flex items-center gap-1.5">
-                                  <span>{meta.label}</span>
-                                  {isSel && <CheckCircle2 size={12} className="text-indigo-600" />}
-                                  {voice.isAfrVariant && (
-                                    <span className="text-[8px] bg-emerald-100 text-emerald-800 px-1 py-0.5 rounded font-black uppercase">
-                                      AFR
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-[10px] text-slate-400 font-bold leading-none">
-                                  {meta.desc}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-black tracking-widest ${
-                                voice.gender === 'Female' ? 'bg-pink-50 text-pink-600' : 'bg-blue-50 text-blue-600'
-                              }`}>
-                                {voice.gender.toUpperCase()}
-                              </span>
-                              <button 
-                                onClick={(e) => { 
-                                  e.stopPropagation(); 
-                                  handleVoicePreview(voice); 
-                                }} 
-                                className="p-1.5 rounded-lg text-slate-300 hover:text-indigo-600 hover:bg-indigo-100 transition-colors"
-                                title="Listen to realistic sample"
-                              >
-                                {previewStatus?.id === voice.id && previewStatus?.status === 'loading' ? (
-                                  <Loader className="animate-spin" size={13} />
-                                ) : (
-                                  <Volume2 size={14} />
-                                )}
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Conversational Bio snippet */}
-                          {voice.conversationalBio && (
-                            <p className="text-[10px] text-slate-500 leading-tight mt-1.5 pl-10">
-                              {voice.conversationalBio}
-                            </p>
-                          )}
+                  {(() => {
+                    const sel = getSelectedVoice();
+                    const meta = (t.voiceLabels as any)[sel.id] || { label: sel.label, desc: sel.description };
+                    return (
+                      <div className="p-3 rounded-xl border-2 border-indigo-100 bg-white">
+                        <div className="flex items-center justify-between mb-2.5">
+                          <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">{t.selectVoice}</span>
+                          <span className="text-[10px] text-slate-400 font-bold">{allVoices.length}</span>
                         </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-white to-transparent pointer-events-none rounded-b-2xl"></div>
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-10 h-10 flex-none rounded-full bg-indigo-600 text-white flex items-center justify-center text-sm font-black">
+                            {meta.label[0]}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[13px] font-extrabold text-slate-800 truncate">{meta.label}</div>
+                            <div className="text-[10px] text-slate-400 font-bold truncate">{meta.desc}</div>
+                          </div>
+                          <button
+                            onClick={() => handleVoicePreview(sel)}
+                            className="flex-none p-2 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-100 transition-colors"
+                            title="Listen to realistic sample"
+                          >
+                            {previewStatus?.id === sel.id && previewStatus?.status === 'loading' ? (
+                              <Loader className="animate-spin" size={15} />
+                            ) : (
+                              <Volume2 size={16} />
+                            )}
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => { setShowVoicePicker(true); if (currentStep === 3) setCurrentStep(4); }}
+                          className="mt-3 w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
+                        >
+                          {language === 'af' ? `Blaai deur stemme (${allVoices.length})` : `Browse voices (${allVoices.length})`}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
 
               </div>
@@ -1282,6 +1171,21 @@ const App: React.FC = () => {
         )}
 
       </main>
+
+      <VoicePicker
+        isOpen={showVoicePicker}
+        onClose={() => setShowVoicePicker(false)}
+        voices={allVoices}
+        selectedId={selectedVoiceId}
+        onSelect={setSelectedVoiceId}
+        onPreview={handleVoicePreview}
+        previewingId={previewStatus?.status === 'loading' ? previewStatus.id : null}
+        language={language}
+        localize={(v) => {
+          const m = (t.voiceLabels as any)[v.id];
+          return m ? { label: m.label, desc: m.desc } : { label: v.label, desc: v.description };
+        }}
+      />
 
       {/* Live Voice Conversation Modal (Gemini 3.8 Live API) */}
       {LIVE_CHAT_ENABLED && (

@@ -68,6 +68,82 @@ async function transcribe(ai: GoogleGenAI, body: any): Promise<Response> {
   return json({ text });
 }
 
+const ELEVENLABS_BASE = 'https://api.elevenlabs.io';
+const ELEVENLABS_VOICE_ID = /^[A-Za-z0-9]{10,40}$/;
+
+async function listElevenLabsVoices(): Promise<Response> {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) return json({ configured: false, voices: [] });
+
+  const voices: any[] = [];
+  let pageToken = '';
+  for (let page = 0; page < 10; page++) {
+    const url = new URL(`${ELEVENLABS_BASE}/v2/voices`);
+    url.searchParams.set('page_size', '100');
+    if (pageToken) url.searchParams.set('next_page_token', pageToken);
+    const res = await fetch(url, { headers: { 'xi-api-key': apiKey } });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      console.error('ElevenLabs voice list failed:', res.status, detail.slice(0, 300));
+      return json({ configured: true, error: 'Could not load ElevenLabs voices. Check the API key.', voices: [] }, 502);
+    }
+    const data: any = await res.json();
+    for (const v of data.voices ?? []) {
+      voices.push({
+        id: String(v.voice_id ?? ''),
+        name: String(v.name ?? ''),
+        category: String(v.category ?? ''),
+        gender: String(v.labels?.gender ?? '').toLowerCase(),
+        accent: String(v.labels?.accent ?? ''),
+        description: String(v.description ?? v.labels?.descriptive ?? ''),
+        previewUrl: typeof v.preview_url === 'string' ? v.preview_url : '',
+        languages: Array.isArray(v.verified_languages)
+          ? v.verified_languages.map((l: any) => String(l?.language ?? '').toLowerCase()).filter(Boolean)
+          : [],
+      });
+    }
+    pageToken = data.next_page_token ?? '';
+    if (!data.has_more || !pageToken) break;
+  }
+  return json({ configured: true, voices: voices.filter((v) => ELEVENLABS_VOICE_ID.test(v.id)) });
+}
+
+async function ttsElevenLabs(body: any): Promise<Response> {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) return json({ error: 'The server is missing its ElevenLabs API key.' }, 500);
+  const text = cleanText(body.text);
+  if (!text) return json({ error: 'Text cannot be empty or is too long' }, 400);
+  const voiceId = body.voiceName;
+  if (typeof voiceId !== 'string' || !ELEVENLABS_VOICE_ID.test(voiceId)) {
+    return json({ error: 'Invalid voice id' }, 400);
+  }
+  const languageCode = body.isAfrikaans === true ? 'af' : 'en';
+
+  // Afrikaans is only supported by the Eleven v3 model.
+  const res = await fetch(`${ELEVENLABS_BASE}/v1/text-to-speech/${voiceId}?output_format=pcm_24000`, {
+    method: 'POST',
+    headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, model_id: 'eleven_v3', language_code: languageCode }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    console.error('ElevenLabs TTS failed:', res.status, detail.slice(0, 500));
+    if (res.status === 429) {
+      return json({ error: 'ElevenLabs quota or rate limit reached.', isQuotaExceeded: true, fallbackToBrowser: true }, 429);
+    }
+    let message = `ElevenLabs could not generate audio (${res.status}).`;
+    try {
+      const parsed = JSON.parse(detail);
+      const d = parsed?.detail;
+      if (typeof d === 'string') message = d;
+      else if (typeof d?.message === 'string') message = d.message;
+    } catch { /* keep default message */ }
+    return json({ error: message }, 502);
+  }
+  const audioBase64 = Buffer.from(await res.arrayBuffer()).toString('base64');
+  return json({ audioBase64 });
+}
+
 async function tts(ai: GoogleGenAI, body: any): Promise<Response> {
   const text = cleanText(body.text);
   if (!text) return json({ error: 'Text cannot be empty or is too long' }, 400);
@@ -207,7 +283,7 @@ export default async (req: Request): Promise<Response> => {
   const route = new URL(req.url).pathname.replace(/\/+$/, '');
 
   if (route === '/api/health' && req.method === 'GET') {
-    return json({ status: 'ok', timestamp: Date.now(), keyConfigured: Boolean(process.env.GEMINI_API_KEY) });
+    return json({ status: 'ok', timestamp: Date.now(), keyConfigured: Boolean(process.env.GEMINI_API_KEY), elevenLabsConfigured: Boolean(process.env.ELEVENLABS_API_KEY) });
   }
   // Everything below needs a signed-in (invited) user, because each call spends Gemini quota.
   const user = await getUser();
@@ -222,6 +298,14 @@ export default async (req: Request): Promise<Response> => {
       return json({ error: 'Could not load the voice library.' }, 502);
     }
   }
+  if (route === '/api/elevenlabs/voices' && req.method === 'GET') {
+    try {
+      return await listElevenLabsVoices();
+    } catch (error) {
+      console.error('ElevenLabs voice list failed:', error);
+      return json({ error: 'Could not load ElevenLabs voices.' }, 502);
+    }
+  }
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
   const handlers: Record<string, (ai: GoogleGenAI, body: any) => Promise<Response>> = {
@@ -233,15 +317,24 @@ export default async (req: Request): Promise<Response> => {
   const handler = handlers[route];
   if (!handler) return json({ error: 'Not found' }, 404);
 
-  const ai = getClient();
-  if (!ai) return json({ error: 'The server is missing its Gemini API key.' }, 500);
-
   let body: any;
   try {
     body = await req.json();
   } catch {
     return json({ error: 'Invalid request body' }, 400);
   }
+
+  if (route === '/api/tts' && body?.provider === 'elevenlabs') {
+    try {
+      return await ttsElevenLabs(body);
+    } catch (error) {
+      console.error('ElevenLabs request failed:', error);
+      return json({ error: 'ElevenLabs request failed.' }, 502);
+    }
+  }
+
+  const ai = getClient();
+  if (!ai) return json({ error: 'The server is missing its Gemini API key.' }, 500);
 
   try {
     return await handler(ai, body ?? {});

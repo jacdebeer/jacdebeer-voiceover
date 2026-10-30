@@ -5,7 +5,8 @@ import {
   SlidersHorizontal, CheckCircle2, Download
 } from 'lucide-react';
 import { VOICE_OPTIONS, VoiceOption } from '../types';
-import { transcribeAudio, generateSpeech } from '../services/geminiService';
+import { transcribeAudio, generateSpeechForVoice } from '../services/geminiService';
+import { VoicePicker } from './VoicePicker';
 import { base64ToWavBlob, speakWithWebSpeech, stopWebSpeech } from '../utils/audioUtils';
 
 const triggerDownload = (url: string, filename: string) => {
@@ -22,6 +23,7 @@ interface TranscriptionPanelProps {
   currentLanguage: 'en' | 'af';
   onApplyToSlide: (text: string) => void;
   onApplyAsNewSlides: (text: string) => void;
+  voices: VoiceOption[];
   selectedVoiceId: string;
   onSelectVoiceId: (id: string) => void;
 }
@@ -30,6 +32,7 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
   currentLanguage,
   onApplyToSlide,
   onApplyAsNewSlides,
+  voices,
   selectedVoiceId,
   onSelectVoiceId,
 }) => {
@@ -55,8 +58,11 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
   const voiceoverAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Filter realistic Afrikaans voices
-  const afrikaansVoices = VOICE_OPTIONS.filter(v => v.isAfrVariant);
-  const currentVoice = VOICE_OPTIONS.find(v => v.id === selectedVoiceId) || afrikaansVoices[0];
+  const [showVoicePicker, setShowVoicePicker] = useState(false);
+  const currentVoice =
+    voices.find(v => v.id === selectedVoiceId) ||
+    VOICE_OPTIONS.find(v => v.id === selectedVoiceId) ||
+    VOICE_OPTIONS.filter(v => v.isAfrVariant)[0];
 
   useEffect(() => {
     return () => {
@@ -149,12 +155,7 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
     setIsGeneratingVoiceover(true);
     setErrorMessage(null);
     try {
-      const base64 = await generateSpeech(
-        transcribedText,
-        currentVoice.voiceName,
-        currentVoice.stylePrompt,
-        currentLanguage === 'af'
-      );
+      const base64 = await generateSpeechForVoice(currentVoice, transcribedText, currentLanguage === 'af');
       const blob = base64ToWavBlob(base64);
       if (voiceoverUrl) URL.revokeObjectURL(voiceoverUrl);
       const newUrl = URL.createObjectURL(blob);
@@ -230,8 +231,15 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
   const previewVoice = async (voice: VoiceOption) => {
     setPreviewVoiceId(voice.id);
     try {
+      if (voice.previewUrl) {
+        const clip = new Audio(voice.previewUrl);
+        clip.onended = () => setPreviewVoiceId(null);
+        clip.onerror = () => setPreviewVoiceId(null);
+        await clip.play();
+        return;
+      }
       const sample = currentLanguage === 'af' ? voice.previewSampleText.af : voice.previewSampleText.en;
-      const base64 = await generateSpeech(sample, voice.voiceName, voice.stylePrompt, currentLanguage === 'af');
+      const base64 = await generateSpeechForVoice(voice, sample, currentLanguage === 'af');
       const blob = base64ToWavBlob(base64);
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
@@ -487,17 +495,17 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
                 </div>
                 <div>
                   <h2 className="text-base font-extrabold text-slate-800">
-                    {currentLanguage === 'af' ? "Realistiese Afrikaanse Stemme" : "Realistic Conversational Afrikaans Voices"}
+                    {currentLanguage === 'af' ? "Lees Transkripsie Voor" : "Voice-over Your Transcription"}
                   </h2>
                   <p className="text-[11px] text-slate-500 font-medium">
                     {currentLanguage === 'af'
-                      ? "Kies 'n lewendige Afrikaanse geselsstem om jou transkripsie dadelik voor te lees"
-                      : "Choose a lifelike, conversational Afrikaans voice to voice-over your transcription"}
+                      ? "Kies 'n stem en lees jou transkripsie dadelik voor"
+                      : "Choose a voice and read your transcription aloud"}
                   </p>
                 </div>
               </div>
               <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full border border-emerald-100">
-                gemini-3.8-flash-tts
+                {currentVoice.provider === 'elevenlabs' ? 'eleven_v3' : 'gemini-3.8-flash-tts'}
               </span>
             </div>
 
@@ -571,69 +579,22 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
               </div>
             </div>
 
-            {/* Voice Catalog for Conversational Afrikaans */}
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
-                {currentLanguage === 'af' ? "Beskikbare Afrikaanse Geselsstemme" : "Afrikaans Voice Personas"}
-              </span>
-              <span className="text-[10px] text-slate-400 font-bold">
-                {afrikaansVoices.length} {currentLanguage === 'af' ? "Stem-opsies" : "Voices"}
-              </span>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 max-h-[380px] custom-scrollbar">
-              {afrikaansVoices.map((voice) => {
-                const isSelected = selectedVoiceId === voice.id;
-                return (
-                  <div
-                    key={voice.id}
-                    onClick={() => onSelectVoiceId(voice.id)}
-                    className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                      isSelected
-                        ? 'border-emerald-600 bg-emerald-50/70 shadow-sm'
-                        : 'border-slate-100 hover:border-emerald-200 bg-white hover:shadow-sm'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black ${
-                          isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {voice.label[0]}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-extrabold text-slate-800">{voice.label}</span>
-                            {isSelected && <CheckCircle2 size={13} className="text-emerald-600" />}
-                            <span className={`text-[8px] font-black px-1 py-0.5 rounded uppercase ${
-                              voice.gender === 'Female' ? 'bg-pink-50 text-pink-600' : 'bg-blue-50 text-blue-600'
-                            }`}>
-                              {voice.gender}
-                            </span>
-                          </div>
-                          <span className="text-[10px] font-bold text-slate-400">{voice.description}</span>
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          previewVoice(voice);
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                        title="Listen to sample"
-                      >
-                        {previewVoiceId === voice.id ? <Loader className="animate-spin" size={14} /> : <Volume2 size={14} />}
-                      </button>
-                    </div>
-
-                    <p className="text-[11px] text-slate-500 leading-tight pl-9">
-                      {voice.conversationalBio}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
+            <button
+              onClick={() => setShowVoicePicker(true)}
+              className="w-full py-2.5 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold shadow-sm transition-all"
+            >
+              {currentLanguage === 'af' ? `Blaai deur stemme (${voices.length})` : `Browse voices (${voices.length})`}
+            </button>
+            <VoicePicker
+              isOpen={showVoicePicker}
+              onClose={() => setShowVoicePicker(false)}
+              voices={voices}
+              selectedId={selectedVoiceId}
+              onSelect={onSelectVoiceId}
+              onPreview={previewVoice}
+              previewingId={previewVoiceId}
+              language={currentLanguage}
+            />
 
           </div>
         </div>
