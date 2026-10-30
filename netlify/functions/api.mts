@@ -147,7 +147,7 @@ interface LibraryVoice {
 }
 
 // Lists Afrikaans (af-ZA) and English UK (en-GB) voices from the Gemini Extended Voice Library.
-async function listVoices(debug: boolean): Promise<Response> {
+async function listVoices(debug: boolean, extra: URLSearchParams): Promise<Response> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return json({ error: 'The server is missing its Gemini API key.' }, 500);
 
@@ -156,7 +156,11 @@ async function listVoices(debug: boolean): Promise<Response> {
   let pageToken = '';
   for (let page = 0; page < 10; page++) {
     const params = new URLSearchParams();
-    for (const code of LIBRARY_LANGUAGES) params.append('language_code', code);
+    // Diagnostic override: /api/voices?debug=1&language=af,af-ZA&region=ZA&search=afrikaans
+    const languages = debug && extra.get('language') ? extra.get('language')!.split(',') : LIBRARY_LANGUAGES;
+    for (const code of languages) if (/^[A-Za-z-]{2,10}$/.test(code)) params.append('language_code', code);
+    if (debug && extra.get('region') && /^[A-Za-z]{2}$/.test(extra.get('region')!)) params.set('region_code', extra.get('region')!);
+    if (debug && extra.get('search') && extra.get('search')!.length < 60) params.set('search', extra.get('search')!);
     params.set('page_size', '1000');
     if (pageToken) params.set('page_token', pageToken);
 
@@ -195,7 +199,8 @@ export default async (req: Request): Promise<Response> => {
   }
   if (route === '/api/voices' && req.method === 'GET') {
     try {
-      return await listVoices(new URL(req.url).searchParams.get('debug') === '1');
+      const q = new URL(req.url).searchParams;
+      return await listVoices(q.get('debug') === '1', q);
     } catch (error) {
       console.error('Voice list failed:', error);
       return json({ error: 'Could not load the voice library.' }, 502);
