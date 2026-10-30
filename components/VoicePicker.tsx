@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Search, Volume2, Loader, CheckCircle2 } from 'lucide-react';
 import { VoiceOption } from '../types';
 
@@ -68,7 +69,7 @@ export const VoicePicker: React.FC<VoicePickerProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
       onClick={onClose}
@@ -203,6 +204,7 @@ export const VoicePicker: React.FC<VoicePickerProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

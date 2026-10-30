@@ -595,6 +595,13 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
                     {currentVoice.description}
                   </span>
                 </div>
+                <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowVoicePicker(true)}
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all"
+                >
+                  {currentLanguage === 'af' ? `Kies stem (${voices.length})` : `Choose voice (${voices.length})`}
+                </button>
                 <button
                   onClick={() => previewVoice(currentVoice)}
                   className="px-2.5 py-1 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
@@ -602,6 +609,7 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
                   {previewVoiceId === currentVoice.id ? <Loader className="animate-spin" size={13} /> : <Volume2 size={13} />}
                   <span>{currentLanguage === 'af' ? "Luister Stem" : "Preview"}</span>
                 </button>
+                </div>
               </div>
               <p className="text-xs text-slate-600 leading-snug font-medium mb-3">
                 {currentVoice.conversationalBio}
@@ -653,12 +661,6 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={() => setShowVoicePicker(true)}
-              className="w-full py-2.5 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold shadow-sm transition-all"
-            >
-              {currentLanguage === 'af' ? `Blaai deur stemme (${voices.length})` : `Browse voices (${voices.length})`}
-            </button>
             <VoicePicker
               isOpen={showVoicePicker}
               onClose={() => setShowVoicePicker(false)}
