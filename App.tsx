@@ -13,6 +13,10 @@ import { Controls } from './components/Controls';
 import { TranscriptionPanel } from './components/TranscriptionPanel';
 import { LiveConversationModal } from './components/LiveConversationModal';
 
+// Live chat needs the WebSocket server in server.ts, which Netlify cannot host.
+// Vite sets DEV to true only when running locally.
+const LIVE_CHAT_ENABLED = (import.meta as any).env?.DEV === true;
+
 const DEFAULT_TEXT_EN = `Welcome to Chapter 1: Introduction to Artificial Intelligence. 
 In this module, we will explore the fundamental concepts of machine learning and how neural networks process information similar to the human brain. 
 Please ensure you have completed the prerequisite reading before proceeding.`;
@@ -806,7 +810,8 @@ const App: React.FC = () => {
             </button>
           </div>
 
-          {/* Live Voice Chat Button */}
+          {/* Live Voice Chat Button (needs the WebSocket server, so it only exists in local dev) */}
+          {LIVE_CHAT_ENABLED && (
           <button
             onClick={() => setIsLiveModalOpen(true)}
             className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white rounded-xl text-xs font-extrabold shadow-md shadow-violet-200 transition-all transform active:scale-95"
@@ -815,6 +820,7 @@ const App: React.FC = () => {
             <Radio size={14} className="animate-pulse" />
             <span>{t.tabs.live}</span>
           </button>
+          )}
         </div>
 
         {/* Global Controls & Language Switch */}
@@ -1255,12 +1261,14 @@ const App: React.FC = () => {
       </main>
 
       {/* Live Voice Conversation Modal (Gemini 3.8 Live API) */}
+      {LIVE_CHAT_ENABLED && (
       <LiveConversationModal
         isOpen={isLiveModalOpen}
         onClose={() => setIsLiveModalOpen(false)}
         currentLanguage={language}
         onInsertToSlide={handleInsertLiveTextToSlide}
       />
+      )}
 
     </div>
   );
