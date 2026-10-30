@@ -31,7 +31,7 @@ export const LiveConversationModal: React.FC<LiveConversationModalProps> = ({
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState<string>('Zephyr');
-  const [chatLanguage, setChatLanguage] = useState<'af' | 'en'>(currentLanguage);
+  const chatLanguage = currentLanguage;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
 
@@ -297,31 +297,6 @@ export const LiveConversationModal: React.FC<LiveConversationModalProps> = ({
 
         {/* Settings Bar */}
         <div className="bg-slate-50 px-5 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-500">
-              {currentLanguage === 'af' ? "Taal:" : "Language:"}
-            </span>
-            <div className="flex bg-white rounded-lg p-0.5 border border-slate-200">
-              <button
-                onClick={() => setChatLanguage('af')}
-                disabled={isConnected}
-                className={`px-2.5 py-1 rounded font-bold transition-all ${
-                  chatLanguage === 'af' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-600'
-                }`}
-              >
-                🇿🇦 Afrikaans
-              </button>
-              <button
-                onClick={() => setChatLanguage('en')}
-                disabled={isConnected}
-                className={`px-2.5 py-1 rounded font-bold transition-all ${
-                  chatLanguage === 'en' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-600'
-                }`}
-              >
-                🇬🇧 English
-              </button>
-            </div>
-          </div>
 
           <div className="flex items-center gap-2">
             <span className="font-bold text-slate-500">

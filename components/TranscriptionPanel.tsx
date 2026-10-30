@@ -39,7 +39,6 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcribedText, setTranscribedText] = useState<string>('');
-  const [transcriptionLang, setTranscriptionLang] = useState<'af' | 'en' | 'auto'>('af');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -132,7 +131,7 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
     setErrorMessage(null);
     try {
       const mimeType = audioBlob.type || 'audio/webm';
-      const text = await transcribeAudio(audioBlob, mimeType, transcriptionLang);
+      const text = await transcribeAudio(audioBlob, mimeType, currentLanguage);
       if (!text.trim()) {
         throw new Error(currentLanguage === 'af' ? "Geen woorde kon opgespoor word nie. Probeer asseblief weer." : "No speech could be detected in audio. Please try again.");
       }
@@ -154,7 +153,7 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
         transcribedText,
         currentVoice.voiceName,
         currentVoice.stylePrompt,
-        true
+        currentLanguage === 'af'
       );
       const blob = base64ToWavBlob(base64);
       if (voiceoverUrl) URL.revokeObjectURL(voiceoverUrl);
@@ -173,7 +172,7 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
       if (err.isQuotaExceeded || err.message === 'QUOTA_EXCEEDED') {
         speakWithWebSpeech(
           transcribedText,
-          transcriptionLang === 'en' ? 'en' : 'af',
+          currentLanguage,
           currentVoice.gender,
           1.0,
           () => setIsPlayingVoiceover(true),
@@ -199,7 +198,7 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
       } else if (transcribedText.trim()) {
         speakWithWebSpeech(
           transcribedText,
-          transcriptionLang === 'en' ? 'en' : 'af',
+          currentLanguage,
           currentVoice.gender,
           1.0,
           () => setIsPlayingVoiceover(true),
@@ -232,7 +231,7 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
     setPreviewVoiceId(voice.id);
     try {
       const sample = currentLanguage === 'af' ? voice.previewSampleText.af : voice.previewSampleText.en;
-      const base64 = await generateSpeech(sample, voice.voiceName, voice.stylePrompt, true);
+      const base64 = await generateSpeech(sample, voice.voiceName, voice.stylePrompt, currentLanguage === 'af');
       const blob = base64ToWavBlob(base64);
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
@@ -292,45 +291,6 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
               <span className="text-[10px] font-black uppercase tracking-wider bg-violet-50 text-violet-700 px-2.5 py-1 rounded-full border border-violet-100">
                 gemini-3.5-transcribe
               </span>
-            </div>
-
-            {/* Language Selector */}
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-center justify-between mb-4">
-              <span className="text-xs font-bold text-slate-600">
-                {currentLanguage === 'af' ? "Doeltaal / Opsporing:" : "Language Hint:"}
-              </span>
-              <div className="flex gap-1.5">
-                <button
-                  onClick={() => setTranscriptionLang('af')}
-                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                    transcriptionLang === 'af'
-                      ? 'bg-violet-600 text-white shadow-sm'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                  }`}
-                >
-                  🇿🇦 Afrikaans
-                </button>
-                <button
-                  onClick={() => setTranscriptionLang('en')}
-                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                    transcriptionLang === 'en'
-                      ? 'bg-violet-600 text-white shadow-sm'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                  }`}
-                >
-                  🇬🇧 English
-                </button>
-                <button
-                  onClick={() => setTranscriptionLang('auto')}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
-                    transcriptionLang === 'auto'
-                      ? 'bg-violet-600 text-white shadow-sm'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                  }`}
-                >
-                  Auto
-                </button>
-              </div>
             </div>
 
             {/* Audio Source: Mic Recording or File Upload */}

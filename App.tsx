@@ -171,7 +171,13 @@ const formatTime = (seconds: number) => {
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('studio');
   const [isLiveModalOpen, setIsLiveModalOpen] = useState(false);
-  const [language, setLanguage] = useState<Language>('af');
+  const [language, setLanguage] = useState<Language>(() => {
+    try {
+      return localStorage.getItem('app-language') === 'en' ? 'en' : 'af';
+    } catch {
+      return 'af';
+    }
+  });
   const [voiceCategoryFilter, setVoiceCategoryFilter] = useState<string>('all');
   
   const [pages, setPages] = useState<CoursePage[]>([{ id: 1, text: DEFAULT_TEXT_AF }]);
@@ -554,6 +560,7 @@ const App: React.FC = () => {
 
   const handleLanguageToggle = (lang: Language) => {
     setLanguage(lang);
+    try { localStorage.setItem('app-language', lang); } catch { /* storage unavailable */ }
     if (pages.length === 1 && (pages[0].text === DEFAULT_TEXT_EN || pages[0].text === DEFAULT_TEXT_AF)) {
       const newDef = lang === 'af' ? DEFAULT_TEXT_AF : DEFAULT_TEXT_EN;
       setPages([{ id: 1, text: newDef }]);
