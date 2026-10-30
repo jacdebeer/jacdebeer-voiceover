@@ -8,6 +8,9 @@ const MAX_TEXT_CHARS = 20000;
 // Netlify rejects request bodies above about 6MB. Base64 adds a third on top of the audio.
 const MAX_AUDIO_BASE64_CHARS = 5 * 1024 * 1024;
 const VALID_VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
+// Voice Library ids are not in the list above, so they are checked by shape instead.
+const LIBRARY_VOICE_ID = /^[A-Za-z0-9_.:-]{1,120}$/;
+const LIBRARY_LANGUAGES = ['af-ZA', 'en-GB'];
 
 function json(body: unknown, status = 200): Response {
   return Response.json(body, { status });
@@ -57,12 +60,18 @@ async function tts(ai: GoogleGenAI, body: any): Promise<Response> {
   const text = cleanText(body.text);
   if (!text) return json({ error: 'Text cannot be empty or is too long' }, 400);
 
-  const { voiceName = 'Kore', style, isAfrikaans = false } = body;
+  const { voiceName = 'Kore', style, isAfrikaans = false, libraryVoice = false } = body;
   const defaultStyle = isAfrikaans
     ? 'Natuurlike, warm, lewendige en boeiende Afrikaanse spraakstyl met outentieke intonasie en duidelike artikulasie.'
     : 'Natural, conversational, engaging e-learning voice-over narrator with clear pacing.';
   const speechStyle = typeof style === 'string' && style.trim() ? style.trim().slice(0, 500) : defaultStyle;
-  const targetVoice = VALID_VOICES.includes(voiceName) ? voiceName : 'Kore';
+  let targetVoice = VALID_VOICES.includes(voiceName) ? voiceName : 'Kore';
+  if (libraryVoice === true) {
+    if (typeof voiceName !== 'string' || !LIBRARY_VOICE_ID.test(voiceName)) {
+      return json({ error: 'Invalid voice id' }, 400);
+    }
+    targetVoice = voiceName;
+  }
 
   try {
     const response = await ai.models.generateContent({
@@ -127,11 +136,70 @@ async function enhance(ai: GoogleGenAI, body: any): Promise<Response> {
   return json({ enhancedText: response.text?.trim() || text });
 }
 
+
+interface LibraryVoice {
+  id: string;
+  displayName: string;
+  languageCode: string;
+  accent: string;
+  gender: string;
+  description: string;
+}
+
+// Lists Afrikaans (af-ZA) and English UK (en-GB) voices from the Gemini Extended Voice Library.
+async function listVoices(debug: boolean): Promise<Response> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return json({ error: 'The server is missing its Gemini API key.' }, 500);
+
+  const voices: LibraryVoice[] = [];
+  const raw: unknown[] = [];
+  let pageToken = '';
+  for (let page = 0; page < 10; page++) {
+    const params = new URLSearchParams();
+    for (const code of LIBRARY_LANGUAGES) params.append('language_code', code);
+    params.set('page_size', '1000');
+    if (pageToken) params.set('page_token', pageToken);
+
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/voices?${params}`, {
+      headers: { 'x-goog-api-key': apiKey },
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      console.error('Voice list failed:', res.status, detail.slice(0, 500));
+      return json({ error: `Could not load the voice library (${res.status}).` }, 502);
+    }
+    const data: any = await res.json();
+    raw.push(data);
+    for (const v of data.voices ?? []) {
+      voices.push({
+        id: String(v.id ?? v.name ?? ''),
+        displayName: String(v.displayName ?? v.display_name ?? v.id ?? ''),
+        languageCode: String(v.languageCode ?? v.language_code ?? ''),
+        accent: String(v.accent ?? ''),
+        gender: String(v.gender ?? '').toLowerCase(),
+        description: String(v.description ?? ''),
+      });
+    }
+    pageToken = data.nextPageToken ?? data.next_page_token ?? '';
+    if (!pageToken) break;
+  }
+  const usable = voices.filter((v) => v.id && LIBRARY_VOICE_ID.test(v.id));
+  return json(debug ? { voices: usable, raw } : { voices: usable });
+}
+
 export default async (req: Request): Promise<Response> => {
   const route = new URL(req.url).pathname.replace(/\/+$/, '');
 
   if (route === '/api/health' && req.method === 'GET') {
     return json({ status: 'ok', timestamp: Date.now(), keyConfigured: Boolean(process.env.GEMINI_API_KEY) });
+  }
+  if (route === '/api/voices' && req.method === 'GET') {
+    try {
+      return await listVoices(new URL(req.url).searchParams.get('debug') === '1');
+    } catch (error) {
+      console.error('Voice list failed:', error);
+      return json({ error: 'Could not load the voice library.' }, 502);
+    }
   }
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 

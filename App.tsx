@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   Mic, BookOpen, Sparkles, AlertCircle, ArrowRightLeft, ChevronLeft, ChevronRight, 
   ScanSearch, FileUp, Gauge, Volume2, Loader, Square, Layers, Wand2, Trash2, 
@@ -6,7 +6,7 @@ import {
   Radio, FileText, AudioWaveform, MessageSquare
 } from 'lucide-react';
 import { VoiceName, VOICE_OPTIONS, AudioState, CoursePage, VoiceOption } from './types';
-import { generateSpeech, translateText, enhanceConversationalScript } from './services/geminiService';
+import { generateSpeech, translateText, enhanceConversationalScript, fetchLibraryVoices } from './services/geminiService';
 import { decodeBase64, pcmToWavBlob, base64ToWavBlob, speakWithWebSpeech, stopWebSpeech } from './utils/audioUtils';
 import { Visualizer } from './components/Visualizer';
 import { Controls } from './components/Controls';
@@ -206,9 +206,20 @@ const App: React.FC = () => {
 
   const t = TRANSLATIONS[language];
 
+  // Built-in voices plus the Afrikaans and English UK voices loaded from the Gemini Voice Library
+  const [libraryVoices, setLibraryVoices] = useState<VoiceOption[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchLibraryVoices().then((voices) => {
+      if (!cancelled) setLibraryVoices(voices);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  const allVoices = useMemo(() => [...VOICE_OPTIONS, ...libraryVoices], [libraryVoices]);
+
   const getSelectedVoice = useCallback(() => {
-    return VOICE_OPTIONS.find(v => v.id === selectedVoiceId) || VOICE_OPTIONS[0];
-  }, [selectedVoiceId]);
+    return allVoices.find(v => v.id === selectedVoiceId) || VOICE_OPTIONS[0];
+  }, [selectedVoiceId, allVoices]);
 
   const stopProcesses = useCallback(() => {
     if (abortControllerRef.current) {
@@ -366,7 +377,8 @@ const App: React.FC = () => {
         text, 
         selectedVoice.voiceName, 
         selectedVoice.stylePrompt, 
-        language === 'af'
+        language === 'af',
+        selectedVoice.isLibrary === true
       );
       setAudioSourceFromBase64(base64);
       ensureAudioContext();
@@ -424,7 +436,8 @@ const App: React.FC = () => {
             page.text, 
             selectedVoice.voiceName, 
             selectedVoice.stylePrompt, 
-            language === 'af'
+            language === 'af',
+            selectedVoice.isLibrary === true
           );
           const audioBytes = decodeBase64(base64);
           updatedPages[i] = { ...updatedPages[i], audioData: audioBytes };
@@ -676,7 +689,7 @@ const App: React.FC = () => {
     try {
       setPreviewStatus({ id: voice.id, status: 'loading' });
       const sampleText = language === 'af' ? voice.previewSampleText.af : voice.previewSampleText.en;
-      const base64 = await generateSpeech(sampleText, voice.voiceName, voice.stylePrompt, voice.isAfrVariant);
+      const base64 = await generateSpeech(sampleText, voice.voiceName, voice.stylePrompt, voice.isAfrVariant, voice.isLibrary === true);
       const blob = base64ToWavBlob(base64);
       const url = URL.createObjectURL(blob);
       const previewAudio = new Audio(url);
@@ -738,7 +751,7 @@ const App: React.FC = () => {
   };
 
   // Filter voices according to category
-  const filteredVoices = VOICE_OPTIONS.filter((voice) => {
+  const filteredVoices = allVoices.filter((voice) => {
     if (voiceCategoryFilter === 'all') return true;
     if (voiceCategoryFilter === 'afr') return voice.isAfrVariant;
     if (voiceCategoryFilter === 'intl') return !voice.isAfrVariant;
