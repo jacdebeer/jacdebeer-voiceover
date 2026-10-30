@@ -12,8 +12,39 @@ export function decodeBase64(base64: string): Uint8Array {
 }
 
 /**
+ * Encodes a Float32Array (audio buffer) into 16-bit PCM base64 string at 16kHz for Live API.
+ */
+export function pcmFloat32ToBase64(float32Array: Float32Array): string {
+  const int16Array = new Int16Array(float32Array.length);
+  for (let i = 0; i < float32Array.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32Array[i]));
+    int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  
+  let binary = '';
+  const bytes = new Uint8Array(int16Array.buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Converts a base64 audio response to a playable WAV Blob.
+ * Handles both already-wrapped WAV files (with RIFF header) and raw PCM.
+ */
+export function base64ToWavBlob(base64: string, sampleRate: number = 24000): Blob {
+  const bytes = decodeBase64(base64);
+  // Check if starts with 'RIFF'
+  if (bytes.length > 4 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+    return new Blob([bytes as any], { type: 'audio/wav' });
+  }
+  return pcmToWavBlob(bytes, sampleRate);
+}
+
+/**
  * Decodes raw PCM data into an AudioBuffer.
- * Gemini 2.5 Flash TTS typically returns 24kHz audio.
  */
 export async function decodeAudioData(
   data: Uint8Array,
@@ -28,7 +59,6 @@ export async function decodeAudioData(
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
-      // Convert Int16 PCM to Float32 (-1.0 to 1.0)
       channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
     }
   }
@@ -43,22 +73,15 @@ export function convertPcmToMp3(pcmData: Uint8Array, sampleRate: number): Blob {
     throw new Error("lamejs library not loaded");
   }
 
-  // Create Int16Array from the Uint8Array buffer
   const samples = new Int16Array(pcmData.buffer);
-  
-  // Initialize encoder: 1 channel, sampleRate, 128kbps
-  // Access Mp3Encoder from the global window.lamejs object
   const encoder = new window.lamejs.Mp3Encoder(1, sampleRate, 128);
-  
   const mp3Data: Int8Array[] = [];
   
-  // Encode
   const mp3buf = encoder.encodeBuffer(samples);
   if (mp3buf.length > 0) {
     mp3Data.push(mp3buf);
   }
   
-  // Flush
   const endBuf = encoder.flush();
   if (endBuf.length > 0) {
     mp3Data.push(endBuf);
@@ -69,7 +92,6 @@ export function convertPcmToMp3(pcmData: Uint8Array, sampleRate: number): Blob {
 
 /**
  * Wraps raw PCM data in a WAV container for native playback.
- * This allows using HTMLAudioElement which supports high-quality time stretching (preservesPitch).
  */
 export function pcmToWavBlob(pcmData: Uint8Array, sampleRate: number = 24000, numChannels: number = 1): Blob {
   const bytesPerSample = 2; // 16-bit
@@ -97,9 +119,9 @@ export function pcmToWavBlob(pcmData: Uint8Array, sampleRate: number = 24000, nu
   view.setUint16(22, numChannels, true);
   // sample rate
   view.setUint32(24, sampleRate, true);
-  // byte rate (sample rate * block align)
+  // byte rate
   view.setUint32(28, byteRate, true);
-  // block align (channel count * bytes per sample)
+  // block align
   view.setUint16(32, blockAlign, true);
   // bits per sample
   view.setUint16(34, 16, true);
@@ -118,5 +140,43 @@ export function pcmToWavBlob(pcmData: Uint8Array, sampleRate: number = 24000, nu
 function writeString(view: DataView, offset: number, string: string) {
   for (let i = 0; i < string.length; i++) {
     view.setUint8(offset + i, string.charCodeAt(i));
+  }
+}
+
+/**
+ * High-reliability browser Web Speech fallback for when API quota is exhausted.
+ */
+export function speakWithWebSpeech(
+  text: string,
+  language: 'af' | 'en',
+  gender?: 'Male' | 'Female',
+  rate: number = 1.0,
+  onStart?: () => void,
+  onEnd?: () => void
+): boolean {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return false;
+
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = rate;
+  utterance.pitch = gender === 'Female' ? 1.05 : 0.95;
+  utterance.lang = language === 'af' ? 'af-ZA' : 'en-US';
+
+  const voices = window.speechSynthesis.getVoices();
+  const targetPrefix = language === 'af' ? 'af' : 'en';
+  const matchingVoice = voices.find(v => v.lang.toLowerCase().startsWith(targetPrefix)) || voices[0];
+  if (matchingVoice) utterance.voice = matchingVoice;
+
+  if (onStart) utterance.onstart = onStart;
+  if (onEnd) utterance.onend = onEnd;
+  utterance.onerror = () => onEnd?.();
+
+  window.speechSynthesis.speak(utterance);
+  return true;
+}
+
+export function stopWebSpeech() {
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
   }
 }

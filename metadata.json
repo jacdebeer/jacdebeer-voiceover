@@ -1,5 +1,8 @@
 {
   "name": "CourseVoice AI",
-  "description": "A React-based text-to-speech generator for e-learning content using Gemini 2.5 Flash TTS.",
-  "requestFramePermissions": []
+  "description": "Voice-over and audio transcription studio for e-learning with realistic conversational Afrikaans voices and Gemini Live audio conversations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

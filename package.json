@@ -4,15 +4,21 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "tsx server.ts",
     "build": "vite build",
-    "preview": "vite preview"
+    "start": "node server.ts",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "react-dom": "^19.2.0",
-    "react": "^19.2.0",
+    "@google/genai": "^1.30.0",
+    "@types/express": "^5.0.6",
+    "@types/ws": "^8.18.2",
+    "express": "^5.2.1",
     "lucide-react": "^0.554.0",
-    "@google/genai": "^1.30.0"
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tsx": "^4.23.15",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

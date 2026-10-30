@@ -1,0 +1,643 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { 
+  Mic, Square, Upload, Play, Pause, Sparkles, Volume2, Copy, Check, 
+  ArrowRight, FileAudio, RotateCcw, AlertCircle, Loader, MessageSquareQuote,
+  SlidersHorizontal, CheckCircle2
+} from 'lucide-react';
+import { VOICE_OPTIONS, VoiceOption } from '../types';
+import { transcribeAudio, generateSpeech } from '../services/geminiService';
+import { base64ToWavBlob, speakWithWebSpeech, stopWebSpeech } from '../utils/audioUtils';
+
+interface TranscriptionPanelProps {
+  currentLanguage: 'en' | 'af';
+  onApplyToSlide: (text: string) => void;
+  onApplyAsNewSlides: (text: string) => void;
+  selectedVoiceId: string;
+  onSelectVoiceId: (id: string) => void;
+}
+
+export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
+  currentLanguage,
+  onApplyToSlide,
+  onApplyAsNewSlides,
+  selectedVoiceId,
+  onSelectVoiceId,
+}) => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcribedText, setTranscribedText] = useState<string>('');
+  const [transcriptionLang, setTranscriptionLang] = useState<'af' | 'en' | 'auto'>('af');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Voiceover generation for the transcription
+  const [isGeneratingVoiceover, setIsGeneratingVoiceover] = useState(false);
+  const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null);
+  const [isPlayingVoiceover, setIsPlayingVoiceover] = useState(false);
+  const [previewVoiceId, setPreviewVoiceId] = useState<string | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const voiceoverAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Filter realistic Afrikaans voices
+  const afrikaansVoices = VOICE_OPTIONS.filter(v => v.isAfrVariant);
+  const currentVoice = VOICE_OPTIONS.find(v => v.id === selectedVoiceId) || afrikaansVoices[0];
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      if (voiceoverUrl) URL.revokeObjectURL(voiceoverUrl);
+    };
+  }, [audioUrl, voiceoverUrl]);
+
+  const startRecording = async () => {
+    setErrorMessage(null);
+    audioChunksRef.current = [];
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const mimeType = mediaRecorder.mimeType || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        setAudioBlob(blob);
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+        setAudioUrl(URL.createObjectURL(blob));
+        stream.getTracks().forEach(t => t.stop());
+      };
+
+      mediaRecorder.start(250);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+
+      timerRef.current = setInterval(() => {
+        setRecordingSeconds(prev => prev + 1);
+      }, 1000);
+    } catch (err: any) {
+      setErrorMessage(currentLanguage === 'af' 
+        ? "Kon nie toegang tot die mikrofoon kry nie. Kontroleer asseblief jou blaaier-toestemmings." 
+        : "Could not access microphone. Please check browser permissions.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setErrorMessage(null);
+    setAudioBlob(file);
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    setAudioUrl(URL.createObjectURL(file));
+  };
+
+  const handleTranscribe = async () => {
+    if (!audioBlob) {
+      setErrorMessage(currentLanguage === 'af' ? "Neem asseblief eers klank op of laai 'n klanklêer op." : "Please record audio or upload an audio file first.");
+      return;
+    }
+
+    setIsTranscribing(true);
+    setErrorMessage(null);
+    try {
+      const mimeType = audioBlob.type || 'audio/webm';
+      const text = await transcribeAudio(audioBlob, mimeType, transcriptionLang);
+      if (!text.trim()) {
+        throw new Error(currentLanguage === 'af' ? "Geen woorde kon opgespoor word nie. Probeer asseblief weer." : "No speech could be detected in audio. Please try again.");
+      }
+      setTranscribedText(text);
+    } catch (err: any) {
+      setErrorMessage(err.message || "Transcription failed");
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  const handleGenerateVoiceover = async () => {
+    if (!transcribedText.trim()) return;
+
+    setIsGeneratingVoiceover(true);
+    setErrorMessage(null);
+    try {
+      const base64 = await generateSpeech(
+        transcribedText,
+        currentVoice.voiceName,
+        currentVoice.stylePrompt,
+        true
+      );
+      const blob = base64ToWavBlob(base64);
+      if (voiceoverUrl) URL.revokeObjectURL(voiceoverUrl);
+      const newUrl = URL.createObjectURL(blob);
+      setVoiceoverUrl(newUrl);
+
+      // Setup audio element for playback
+      if (!voiceoverAudioRef.current) {
+        voiceoverAudioRef.current = new Audio();
+        voiceoverAudioRef.current.onended = () => setIsPlayingVoiceover(false);
+      }
+      voiceoverAudioRef.current.src = newUrl;
+      voiceoverAudioRef.current.play();
+      setIsPlayingVoiceover(true);
+    } catch (err: any) {
+      if (err.isQuotaExceeded || err.message === 'QUOTA_EXCEEDED') {
+        speakWithWebSpeech(
+          transcribedText,
+          transcriptionLang === 'en' ? 'en' : 'af',
+          currentVoice.gender,
+          1.0,
+          () => setIsPlayingVoiceover(true),
+          () => setIsPlayingVoiceover(false)
+        );
+        return;
+      }
+      setErrorMessage(err.message || "Failed to generate voice-over");
+    } finally {
+      setIsGeneratingVoiceover(false);
+    }
+  };
+
+  const toggleVoiceoverPlay = () => {
+    if (isPlayingVoiceover) {
+      if (voiceoverAudioRef.current) voiceoverAudioRef.current.pause();
+      stopWebSpeech();
+      setIsPlayingVoiceover(false);
+    } else {
+      if (voiceoverUrl && voiceoverAudioRef.current) {
+        voiceoverAudioRef.current.play();
+        setIsPlayingVoiceover(true);
+      } else if (transcribedText.trim()) {
+        speakWithWebSpeech(
+          transcribedText,
+          transcriptionLang === 'en' ? 'en' : 'af',
+          currentVoice.gender,
+          1.0,
+          () => setIsPlayingVoiceover(true),
+          () => setIsPlayingVoiceover(false)
+        );
+      }
+    }
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(transcribedText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const previewVoice = async (voice: VoiceOption) => {
+    setPreviewVoiceId(voice.id);
+    try {
+      const sample = currentLanguage === 'af' ? voice.previewSampleText.af : voice.previewSampleText.en;
+      const base64 = await generateSpeech(sample, voice.voiceName, voice.stylePrompt, true);
+      const blob = base64ToWavBlob(base64);
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => {
+        setPreviewVoiceId(null);
+        URL.revokeObjectURL(url);
+      };
+      audio.play();
+    } catch (e: any) {
+      if (e.isQuotaExceeded || e.message === 'QUOTA_EXCEEDED') {
+        const sample = currentLanguage === 'af' ? voice.previewSampleText.af : voice.previewSampleText.en;
+        speakWithWebSpeech(
+          sample,
+          currentLanguage,
+          voice.gender,
+          1.0,
+          () => setPreviewVoiceId(voice.id),
+          () => setPreviewVoiceId(null)
+        );
+        return;
+      }
+      setPreviewVoiceId(null);
+    }
+  };
+
+  const formatSecs = (s: number) => {
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-slate-50 overflow-y-auto custom-scrollbar p-1">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 flex-1">
+        
+        {/* Left Column: Audio Input & Transcription Engine */}
+        <div className="xl:col-span-6 flex flex-col space-y-4">
+          
+          {/* Header Card */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-100 text-violet-600 flex items-center justify-center font-bold">
+                  <Mic size={20} />
+                </div>
+                <div>
+                  <h2 className="text-base font-extrabold text-slate-800">
+                    {currentLanguage === 'af' ? "Klank-Transkripsie" : "Audio Transcription"}
+                  </h2>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    {currentLanguage === 'af' 
+                      ? "Transkribeer Afrikaans of Engels met gemini-3.5-transcribe" 
+                      : "Transcribe spoken audio into high-accuracy text via gemini-3.5-transcribe"}
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-wider bg-violet-50 text-violet-700 px-2.5 py-1 rounded-full border border-violet-100">
+                gemini-3.5-transcribe
+              </span>
+            </div>
+
+            {/* Language Selector */}
+            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-center justify-between mb-4">
+              <span className="text-xs font-bold text-slate-600">
+                {currentLanguage === 'af' ? "Doeltaal / Opsporing:" : "Language Hint:"}
+              </span>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => setTranscriptionLang('af')}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                    transcriptionLang === 'af'
+                      ? 'bg-violet-600 text-white shadow-sm'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  🇿🇦 Afrikaans
+                </button>
+                <button
+                  onClick={() => setTranscriptionLang('en')}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                    transcriptionLang === 'en'
+                      ? 'bg-violet-600 text-white shadow-sm'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  🇬🇧 English
+                </button>
+                <button
+                  onClick={() => setTranscriptionLang('auto')}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                    transcriptionLang === 'auto'
+                      ? 'bg-violet-600 text-white shadow-sm'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  Auto
+                </button>
+              </div>
+            </div>
+
+            {/* Audio Source: Mic Recording or File Upload */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+              
+              {/* Mic Record Card */}
+              <div className={`p-4 rounded-xl border transition-all flex flex-col justify-between ${
+                isRecording ? 'border-rose-300 bg-rose-50/50' : 'border-slate-200 bg-slate-50/50'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-slate-700">
+                    {currentLanguage === 'af' ? "Mikrofoon Opname" : "Microphone Record"}
+                  </span>
+                  {isRecording && (
+                    <span className="flex items-center gap-1.5 text-xs font-mono font-bold text-rose-600 animate-pulse">
+                      <span className="w-2 h-2 rounded-full bg-rose-600"></span>
+                      {formatSecs(recordingSeconds)}
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-2">
+                  {isRecording ? (
+                    <button
+                      onClick={stopRecording}
+                      className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-md shadow-rose-200 flex items-center justify-center gap-2 transition-all"
+                    >
+                      <Square size={14} fill="currentColor" />
+                      <span>{currentLanguage === 'af' ? "Stop Opname" : "Stop Recording"}</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={startRecording}
+                      disabled={isTranscribing}
+                      className="w-full py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-bold shadow-md shadow-violet-200 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                    >
+                      <Mic size={14} />
+                      <span>{currentLanguage === 'af' ? "Begin Opneem" : "Start Recording"}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* File Upload Card */}
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-slate-700">
+                    {currentLanguage === 'af' ? "Laai Klanklêer Op" : "Upload Audio File"}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">WAV, MP3, M4A</span>
+                </div>
+
+                <div className="relative mt-2">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept="audio/*"
+                    onChange={handleFileUpload}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <button
+                    type="button"
+                    className="w-full py-2.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-sm"
+                  >
+                    <Upload size={14} className="text-violet-600" />
+                    <span>{currentLanguage === 'af' ? "Kies Klanklêer" : "Select Audio"}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Audio Preview Player if audio is ready */}
+            {audioUrl && (
+              <div className="mb-4 bg-violet-50/60 p-3 rounded-xl border border-violet-100 flex items-center justify-between">
+                <div className="flex items-center gap-2.5 text-xs text-violet-900 font-medium">
+                  <FileAudio size={18} className="text-violet-600" />
+                  <span>
+                    {currentLanguage === 'af' ? "Klankopname gereed vir transkripsie" : "Audio loaded & ready for transcription"}
+                  </span>
+                </div>
+                <audio controls src={audioUrl} className="h-8 max-w-[200px]" />
+              </div>
+            )}
+
+            {/* Run Transcription Button */}
+            <button
+              onClick={handleTranscribe}
+              disabled={!audioBlob || isTranscribing || isRecording}
+              className="w-full py-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-lg shadow-violet-200 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+            >
+              {isTranscribing ? (
+                <>
+                  <Loader className="animate-spin" size={15} />
+                  <span>{currentLanguage === 'af' ? "Transkribeer Tans met Gemini..." : "Transcribing Audio with Gemini..."}</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={15} />
+                  <span>{currentLanguage === 'af' ? "Transkribeer Klank na Teks" : "Transcribe Audio to Text"}</span>
+                </>
+              )}
+            </button>
+
+            {errorMessage && (
+              <div className="mt-3 p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+                <AlertCircle size={15} className="flex-none" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Transcribed Text Output Card */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[220px]">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <MessageSquareQuote size={17} className="text-violet-600" />
+                <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
+                  {currentLanguage === 'af' ? "Getranskribeerde Teks" : "Transcribed Output"}
+                </h3>
+              </div>
+              {transcribedText && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopy}
+                    className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-800 transition-colors text-xs flex items-center gap-1 font-bold"
+                    title="Copy Text"
+                  >
+                    {copied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+                    <span className="text-[10px]">{copied ? "Copied" : "Copy"}</span>
+                  </button>
+                  <button
+                    onClick={() => setTranscribedText('')}
+                    className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-rose-500 transition-colors"
+                    title="Clear"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <textarea
+              value={transcribedText}
+              onChange={(e) => setTranscribedText(e.target.value)}
+              placeholder={currentLanguage === 'af' 
+                ? "Getranskribeerde Afrikaanse teks sal hier verskyn. Jy kan dit ook vrylik wysig of redigeer..." 
+                : "Transcribed speech will appear here. You can also edit it freely..."}
+              className="flex-1 w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm leading-relaxed resize-none focus:outline-none focus:border-violet-400 custom-scrollbar"
+            />
+
+            {/* Quick Actions to Course Slides */}
+            {transcribedText && (
+              <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] text-slate-400 font-bold">
+                  {transcribedText.length} {currentLanguage === 'af' ? "karakters" : "characters"}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onApplyToSlide(transcribedText)}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+                  >
+                    <span>{currentLanguage === 'af' ? "Vervang Huidige Skyfie" : "Apply to Current Slide"}</span>
+                    <ArrowRight size={13} />
+                  </button>
+                  <button
+                    onClick={() => onApplyAsNewSlides(transcribedText)}
+                    className="px-3 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+                  >
+                    <Sparkles size={13} />
+                    <span>{currentLanguage === 'af' ? "Skep Nuwe Skyfies" : "Create Slides"}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Realistic Conversational Afrikaans Voices for Transcriptions */}
+        <div className="xl:col-span-6 flex flex-col space-y-4">
+          
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col flex-1">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
+                  <Volume2 size={20} />
+                </div>
+                <div>
+                  <h2 className="text-base font-extrabold text-slate-800">
+                    {currentLanguage === 'af' ? "Realistiese Afrikaanse Stemme" : "Realistic Conversational Afrikaans Voices"}
+                  </h2>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    {currentLanguage === 'af'
+                      ? "Kies 'n lewendige Afrikaanse geselsstem om jou transkripsie dadelik voor te lees"
+                      : "Choose a lifelike, conversational Afrikaans voice to voice-over your transcription"}
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full border border-emerald-100">
+                gemini-3.8-flash-tts
+              </span>
+            </div>
+
+            {/* Selected Voice Highlight Card */}
+            <div className="bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-indigo-500/10 p-4 rounded-xl border border-emerald-200/80 mb-4">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-extrabold text-slate-900">{currentVoice.label}</span>
+                  <span className="text-[9px] bg-emerald-600 text-white font-black px-1.5 py-0.5 rounded uppercase">
+                    {currentVoice.gender}
+                  </span>
+                  <span className="text-[10px] bg-white text-slate-600 font-bold px-2 py-0.5 rounded border border-emerald-100">
+                    {currentVoice.description}
+                  </span>
+                </div>
+                <button
+                  onClick={() => previewVoice(currentVoice)}
+                  className="px-2.5 py-1 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
+                >
+                  {previewVoiceId === currentVoice.id ? <Loader className="animate-spin" size={13} /> : <Volume2 size={13} />}
+                  <span>{currentLanguage === 'af' ? "Luister Stem" : "Preview"}</span>
+                </button>
+              </div>
+              <p className="text-xs text-slate-600 leading-snug font-medium mb-3">
+                {currentVoice.conversationalBio}
+              </p>
+
+              {/* Instant Voiceover generator for the transcribed text */}
+              <div className="pt-3 border-t border-emerald-200/60 flex items-center justify-between gap-3">
+                <button
+                  onClick={handleGenerateVoiceover}
+                  disabled={!transcribedText.trim() || isGeneratingVoiceover}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-200 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                >
+                  {isGeneratingVoiceover ? (
+                    <>
+                      <Loader className="animate-spin" size={14} />
+                      <span>{currentLanguage === 'af' ? "Genereer Klank..." : "Generating Voice..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={14} />
+                      <span>
+                        {currentLanguage === 'af' 
+                          ? `Lees Transkripsie met ${currentVoice.label}` 
+                          : `Voice-over with ${currentVoice.label}`}
+                      </span>
+                    </>
+                  )}
+                </button>
+
+                {voiceoverUrl && (
+                  <button
+                    onClick={toggleVoiceoverPlay}
+                    className="p-2.5 bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-700 rounded-xl transition-all shadow-sm"
+                    title="Play/Pause Voiceover"
+                  >
+                    {isPlayingVoiceover ? <Pause size={16} /> : <Play size={16} />}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Voice Catalog for Conversational Afrikaans */}
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
+                {currentLanguage === 'af' ? "Beskikbare Afrikaanse Geselsstemme" : "Afrikaans Voice Personas"}
+              </span>
+              <span className="text-[10px] text-slate-400 font-bold">
+                {afrikaansVoices.length} {currentLanguage === 'af' ? "Stem-opsies" : "Voices"}
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 max-h-[380px] custom-scrollbar">
+              {afrikaansVoices.map((voice) => {
+                const isSelected = selectedVoiceId === voice.id;
+                return (
+                  <div
+                    key={voice.id}
+                    onClick={() => onSelectVoiceId(voice.id)}
+                    className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                      isSelected
+                        ? 'border-emerald-600 bg-emerald-50/70 shadow-sm'
+                        : 'border-slate-100 hover:border-emerald-200 bg-white hover:shadow-sm'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black ${
+                          isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {voice.label[0]}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-extrabold text-slate-800">{voice.label}</span>
+                            {isSelected && <CheckCircle2 size={13} className="text-emerald-600" />}
+                            <span className={`text-[8px] font-black px-1 py-0.5 rounded uppercase ${
+                              voice.gender === 'Female' ? 'bg-pink-50 text-pink-600' : 'bg-blue-50 text-blue-600'
+                            }`}>
+                              {voice.gender}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-slate-400">{voice.description}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          previewVoice(voice);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                        title="Listen to sample"
+                      >
+                        {previewVoiceId === voice.id ? <Loader className="animate-spin" size={14} /> : <Volume2 size={14} />}
+                      </button>
+                    </div>
+
+                    <p className="text-[11px] text-slate-500 leading-tight pl-9">
+                      {voice.conversationalBio}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+};
