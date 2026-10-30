@@ -1,4 +1,4 @@
-import { VoiceName } from "../types";
+import { VoiceName, VoiceOption } from "../types";
 
 /**
  * Converts a Blob to a base64 encoded string.
@@ -24,7 +24,8 @@ export async function generateSpeech(
   text: string,
   voiceName: VoiceName | string,
   style?: string,
-  isAfrikaans: boolean = false
+  isAfrikaans: boolean = false,
+  libraryVoice: boolean = false
 ): Promise<string> {
   if (!text || !text.trim()) {
     throw new Error("Text cannot be empty");
@@ -38,6 +39,7 @@ export async function generateSpeech(
       voiceName,
       style,
       isAfrikaans,
+      libraryVoice,
     }),
   });
 
@@ -136,4 +138,41 @@ export async function enhanceConversationalScript(
 
   const data = await response.json();
   return data.enhancedText || text;
+}
+
+
+/**
+ * Load the Afrikaans (af-ZA) and English UK (en-GB) voices from the Gemini Voice Library.
+ * Returns an empty list when the library cannot be reached, so the built-in voices still work.
+ */
+export async function fetchLibraryVoices(): Promise<VoiceOption[]> {
+  try {
+    const response = await fetch("/api/voices");
+    if (!response.ok) return [];
+    const data = await response.json();
+    const voices: any[] = Array.isArray(data.voices) ? data.voices : [];
+    return voices.map((v) => {
+      const isAfr = String(v.languageCode).toLowerCase().startsWith("af");
+      const accent = v.accent ? ` (${v.accent})` : "";
+      return {
+        id: `lib:${v.id}`,
+        voiceName: v.id,
+        label: v.displayName || v.id,
+        description: (isAfr ? "Afrikaans" : "English UK") + accent,
+        conversationalBio: v.description || "",
+        gender: v.gender === "male" ? "Male" : "Female",
+        stylePrompt: "",
+        previewSampleText: {
+          af: "Goeiedag! Dit is 'n voorbeeld van hoe hierdie stem in jou kursus sal klink.",
+          en: "Hello! This is a sample of how this voice will sound in your course.",
+        },
+        isAfrVariant: isAfr,
+        category: "conversational",
+        isLibrary: true,
+        locale: v.languageCode,
+      } as VoiceOption;
+    });
+  } catch {
+    return [];
+  }
 }

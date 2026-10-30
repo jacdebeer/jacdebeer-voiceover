@@ -20,7 +20,7 @@ export type VoiceCategory = 'conversational' | 'educator' | 'storyteller' | 'exe
 
 export interface VoiceOption {
   id: string; // Unique identifier for the selection UI
-  voiceName: VoiceName; // The actual prebuilt voice name for the API
+  voiceName: VoiceName | string; // Prebuilt voice name, or a Voice Library id when isLibrary is true
   label: string;
   description: string;
   conversationalBio: string;
@@ -32,6 +32,8 @@ export interface VoiceOption {
   };
   isAfrVariant?: boolean;
   category?: VoiceCategory;
+  isLibrary?: boolean; // Loaded from the Gemini Voice Library
+  locale?: string; // e.g. af-ZA or en-GB
 }
 
 export interface CoursePage {
