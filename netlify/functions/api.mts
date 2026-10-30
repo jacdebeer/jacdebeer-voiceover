@@ -54,7 +54,18 @@ async function transcribe(ai: GoogleGenAI, body: any): Promise<Response> {
       parts: [{ inlineData: { mimeType: String(mimeType), data: audioBase64 } }, { text: prompt }],
     },
   });
-  return json({ text: response.text?.trim() || '' });
+  // gemini-3.5-transcribe returns the transcript in an audioTranscription part, not in a text part,
+  // so response.text is empty. Read the transcription parts first and fall back to plain text.
+  const parts = response.candidates?.[0]?.content?.parts ?? [];
+  const transcribed = parts
+    .map((part) => part.audioTranscription?.text?.trim() ?? '')
+    .filter(Boolean)
+    .join(' ');
+  const text = transcribed || response.text?.trim() || '';
+  if (!text) {
+    console.warn('Transcription returned no text. Part kinds:', parts.map((part) => Object.keys(part).join('+')));
+  }
+  return json({ text });
 }
 
 async function tts(ai: GoogleGenAI, body: any): Promise<Response> {
