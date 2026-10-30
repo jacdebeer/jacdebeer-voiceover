@@ -34,6 +34,8 @@ export interface VoiceOption {
   category?: VoiceCategory;
   isLibrary?: boolean; // Loaded from the Gemini Voice Library
   locale?: string; // e.g. af-ZA or en-GB
+  provider?: 'gemini' | 'elevenlabs'; // defaults to gemini
+  previewUrl?: string; // ready-made sample clip (ElevenLabs)
 }
 
 export interface CoursePage {
