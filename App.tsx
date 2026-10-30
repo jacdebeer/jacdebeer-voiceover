@@ -489,7 +489,10 @@ const App: React.FC = () => {
     const a = document.createElement('a');
     a.href = currentBlobUrlRef.current;
     a.download = `voiceover-slide-${pageIndex + 1}.wav`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
   };
 
   const handleTranslate = async () => {

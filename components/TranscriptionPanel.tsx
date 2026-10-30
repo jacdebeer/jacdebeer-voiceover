@@ -2,11 +2,21 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Mic, Square, Upload, Play, Pause, Sparkles, Volume2, Copy, Check, 
   ArrowRight, FileAudio, RotateCcw, AlertCircle, Loader, MessageSquareQuote,
-  SlidersHorizontal, CheckCircle2
+  SlidersHorizontal, CheckCircle2, Download
 } from 'lucide-react';
 import { VOICE_OPTIONS, VoiceOption } from '../types';
 import { transcribeAudio, generateSpeech } from '../services/geminiService';
 import { base64ToWavBlob, speakWithWebSpeech, stopWebSpeech } from '../utils/audioUtils';
+
+const triggerDownload = (url: string, filename: string) => {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+};
 
 interface TranscriptionPanelProps {
   currentLanguage: 'en' | 'af';
@@ -197,6 +207,19 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
         );
       }
     }
+  };
+
+  const handleDownloadText = () => {
+    if (!transcribedText.trim()) return;
+    const blob = new Blob([transcribedText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    triggerDownload(url, 'transcription.txt');
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handleDownloadVoiceover = () => {
+    if (!voiceoverUrl) return;
+    triggerDownload(voiceoverUrl, 'voiceover.wav');
   };
 
   const handleCopy = () => {
@@ -431,6 +454,14 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
               {transcribedText && (
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={handleDownloadText}
+                    className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-800 transition-colors text-xs flex items-center gap-1 font-bold"
+                    title={currentLanguage === 'af' ? "Laai teks af" : "Download text"}
+                  >
+                    <Download size={13} />
+                    <span className="text-[10px]">{currentLanguage === 'af' ? "Laai af" : "Download"}</span>
+                  </button>
+                  <button
                     onClick={handleCopy}
                     className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-800 transition-colors text-xs flex items-center gap-1 font-bold"
                     title="Copy Text"
@@ -557,6 +588,16 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
                     </>
                   )}
                 </button>
+
+                {voiceoverUrl && (
+                  <button
+                    onClick={handleDownloadVoiceover}
+                    className="p-2.5 bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-700 rounded-xl transition-all shadow-sm"
+                    title={currentLanguage === 'af' ? "Laai klank af (WAV)" : "Download voiceover (WAV)"}
+                  >
+                    <Download size={16} />
+                  </button>
+                )}
 
                 {voiceoverUrl && (
                   <button
