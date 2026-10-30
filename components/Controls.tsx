@@ -48,7 +48,7 @@ export const Controls: React.FC<ControlsProps> = ({
         onClick={onDownload}
         disabled={disabled}
         className="p-2 text-slate-400 hover:text-indigo-600 transition-colors disabled:opacity-50"
-        title="Download (Not implemented for raw PCM demo)"
+        title="Download audio (WAV)"
       >
         <Download size={20} />
       </button>
