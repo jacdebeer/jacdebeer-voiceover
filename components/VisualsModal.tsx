@@ -3,7 +3,7 @@ import { X, Wand2, Loader, Download, Film, AlertCircle, CheckCircle2, Volume2 } 
 import { VoiceOption } from '../types';
 import { LessonData, buildPlayerHtml, checkScript } from '../services/lessonPlayer';
 import { generateVisuals, narrateLines, VisualsLevel } from '../services/visualsService';
-import { buildHyperframesZip } from '../services/hyperframesExport';
+import { buildHyperframesZip, buildHyperframesPreviewHtml } from '../services/hyperframesExport';
 
 /** What is kept for one slide while the page stays open. */
 export interface VisualsEntry {
@@ -73,6 +73,22 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
 
   const html = useMemo(() => (entry ? buildPlayerHtml(entry.data, entry.audio) : ''), [entry]);
   const check = useMemo(() => (entry ? checkScript(entry.data, entry.slideText) : null), [entry]);
+
+  const [view, setView] = useState<'player' | 'video'>('player');
+  const [videoHtml, setVideoHtml] = useState('');
+  const [videoBusy, setVideoBusy] = useState(false);
+  useEffect(() => {
+    // Build the HyperFrames preview when it is opened, and again whenever the visuals or voice change.
+    setVideoHtml('');
+    if (view !== 'video' || !entry) return;
+    let cancelled = false;
+    setVideoBusy(true);
+    buildHyperframesPreviewHtml(entry.data, entry.audio, slideNumber)
+      .then((h) => { if (!cancelled) setVideoHtml(h); })
+      .catch((e) => { if (!cancelled) setError(e?.message || 'Could not build the video preview.'); })
+      .finally(() => { if (!cancelled) setVideoBusy(false); });
+    return () => { cancelled = true; };
+  }, [view, entry, slideNumber]);
 
   const [exporting, setExporting] = useState(false);
   const exportVideo = async () => {
@@ -203,14 +219,31 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
             </p>
           </div>
 
-          <div className="flex-1 min-h-0 bg-slate-50">
-            {entry ? (
-              <iframe title="Slide visuals" srcDoc={html} className="w-full h-full border-0" />
-            ) : (
-              <div className="h-full flex items-center justify-center text-xs text-slate-400 p-6 text-center">
-                {af ? 'Die beelde verskyn hier.' : 'The visuals appear here.'}
-              </div>
-            )}
+          <div className="flex-1 min-h-0 bg-slate-50 flex flex-col">
+            <div className="flex-none flex gap-1 px-3 pt-2 border-b border-slate-100 bg-white">
+              {([['player', af ? 'Speler' : 'Player'], ['video', af ? 'Video (HyperFrames)' : 'Video (HyperFrames)']] as const).map(([id, label]) => (
+                <button key={id} onClick={() => setView(id)}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-t-lg border-b-2 ${view === id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-400 hover:text-slate-700'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 min-h-0">
+              {!entry ? (
+                <div className="h-full flex items-center justify-center text-xs text-slate-400 p-6 text-center">
+                  {af ? 'Die beelde verskyn hier.' : 'The visuals appear here.'}
+                </div>
+              ) : view === 'player' ? (
+                <iframe title="Slide visuals" srcDoc={html} className="w-full h-full border-0" />
+              ) : videoHtml ? (
+                <iframe title="HyperFrames video preview" srcDoc={videoHtml} className="w-full h-full border-0 bg-slate-900" />
+              ) : (
+                <div className="h-full flex items-center justify-center text-xs text-slate-500 gap-2">
+                  {videoBusy && <Loader className="animate-spin" size={13} />}
+                  {af ? 'Bou die video-voorskou…' : 'Building the video preview…'}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

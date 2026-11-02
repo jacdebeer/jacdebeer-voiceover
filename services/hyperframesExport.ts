@@ -114,7 +114,13 @@ async function plan(data: LessonData, audio: Record<string, string>) {
   return { beats, files, total: t };
 }
 
-function compositionHtml(data: LessonData, p: Awaited<ReturnType<typeof plan>>, id: string, zoom: number[]): string {
+function compositionHtml(
+  data: LessonData,
+  p: Awaited<ReturnType<typeof plan>>,
+  id: string,
+  zoom: number[],
+  audioUris?: Record<string, string>, // set for the in-app preview: plays the lines itself instead of using <audio> files
+): string {
   const num = (n: number) => n.toFixed(3);
   const sections = p.beats
     .map(
@@ -142,7 +148,7 @@ function compositionHtml(data: LessonData, p: Awaited<ReturnType<typeof plan>>, 
       subs.push(`<div class="sub" id="sub${n}">${esc(c.text)}</div>`);
       js.push(`tl.fromTo('#sub${n}',{autoAlpha:0,y:10},{autoAlpha:1,y:0,duration:0.25},${num(c.start)});`);
       js.push(`tl.to('#sub${n}',{autoAlpha:0,duration:0.25},${num(c.start + c.dur + LINE_GAP - 0.25)});`);
-      if (c.file) {
+      if (c.file && !audioUris) {
         audios.push(
           `<audio id="line${n}" data-start="${num(c.start)}" data-duration="${num(c.dur)}" data-track-index="2" data-volume="1" src="${c.file}"></audio>`,
         );
@@ -160,6 +166,7 @@ ${playerCss.replace(/html\{font-size:var\(--fs\)\}/, '').replace(/transition:[^;
 html{font-size:${FONT_PX}px}
 html,body{margin:0;padding:0;background:#EEF1F6}
 #stage{position:relative;width:${W}px;height:${H}px;overflow:hidden;background:#EEF1F6;font-family:var(--font)}
+${audioUris ? '#stage{position:absolute;left:0;top:0;transform-origin:0 0}.beat{display:none}html,body{overflow:hidden;height:100%}' : ''}
 .beat{position:absolute;inset:0;padding:48px 96px 150px}
 .beatInner{height:100%;overflow:hidden}
 .beat .head{margin-bottom:14px}
@@ -180,10 +187,73 @@ html,body{margin:0;padding:0;background:#EEF1F6}
     window.__timelines = window.__timelines || {};
     window.__timelines[${JSON.stringify(id)}] = tl;
   </script>
-</div>
+</div>${audioUris ? previewDriver(p, audioUris) : ''}
 </body>
 </html>
 `;
+}
+
+/** Controls and a small clock that stand in for the HyperFrames player, so the composition can be watched in the app. */
+function previewDriver(p: Awaited<ReturnType<typeof plan>>, audioUris: Record<string, string>): string {
+  const cues = p.beats.flatMap((b) =>
+    b.cues.filter((c) => c.file && audioUris[c.text]).map((c) => ({ start: +c.start.toFixed(3), dur: +c.dur.toFixed(3), src: audioUris[c.text] })),
+  );
+  const beats = p.beats.map((b, i) => ({ id: 'beat' + i, start: +b.start.toFixed(3), end: +b.end.toFixed(3) }));
+  const data = JSON.stringify({ total: +p.total.toFixed(3), cues, beats }).replace(/</g, '\\u003c');
+  return `
+<div id="bar"><button id="pp">&#9654;</button><input id="seek" type="range" min="0" max="1000" value="0"><span id="clock">0:00</span></div>
+<style>
+#bar{position:fixed;left:0;right:0;bottom:0;height:44px;background:#111827;color:#fff;display:flex;gap:12px;align-items:center;padding:0 14px;font:600 13px system-ui}
+#bar button{background:#fff;color:#111827;border:0;border-radius:8px;width:34px;height:28px;font-size:14px;cursor:pointer}
+#bar input{flex:1}
+</style>
+<script>
+(function(){
+  var D = ${data}, t = 0, playing = false, t0 = 0, auds = [], started = {};
+  var stage = document.getElementById('stage'), pp = document.getElementById('pp'), seek = document.getElementById('seek'), clock = document.getElementById('clock');
+  function fit(){
+    var s = Math.min(innerWidth / ${W}, (innerHeight - 44) / ${H});
+    stage.style.transform = 'scale(' + s + ')';
+    stage.style.left = Math.max(0, (innerWidth - ${W} * s) / 2) + 'px';
+  }
+  function stopAudio(){ auds.forEach(function(a){ try{ a.pause(); }catch(e){} }); auds = []; }
+  function show(){
+    D.beats.forEach(function(b){ document.getElementById(b.id).style.display = (t >= b.start && t < b.end) ? 'block' : 'none'; });
+    tl.time(t);
+    seek.value = Math.round(t / D.total * 1000);
+    var m = Math.floor(t / 60), sec = Math.floor(t % 60); clock.textContent = m + ':' + (sec < 10 ? '0' : '') + sec;
+  }
+  function startCue(i, offset){
+    started[i] = 1;
+    var a = new Audio(D.cues[i].src); a.currentTime = offset || 0; auds.push(a);
+    var pr = a.play(); if(pr && pr.catch) pr.catch(function(){});
+  }
+  function frame(){
+    if(!playing) return;
+    t = (performance.now() - t0) / 1000;
+    if(t >= D.total){ t = D.total; setPlaying(false); show(); return; }
+    D.cues.forEach(function(c, i){ if(!started[i] && t >= c.start && t < c.start + c.dur) startCue(i, t - c.start); });
+    show();
+    requestAnimationFrame(frame);
+  }
+  function setPlaying(on){
+    playing = on; pp.innerHTML = on ? '&#10074;&#10074;' : '&#9654;';
+    stopAudio();
+    if(on){
+      if(t >= D.total - 0.05) t = 0;
+      started = {};
+      D.cues.forEach(function(c, i){ if(t >= c.start + c.dur) started[i] = 1; });
+      t0 = performance.now() - t * 1000;
+      D.cues.forEach(function(c, i){ if(!started[i] && t >= c.start) startCue(i, t - c.start); });
+      requestAnimationFrame(frame);
+    }
+  }
+  pp.onclick = function(){ setPlaying(!playing); };
+  seek.oninput = function(){ var was = playing; if(was) setPlaying(false); t = seek.value / 1000 * D.total; show(); if(was) setPlaying(true); };
+  window.addEventListener('resize', fit);
+  fit(); show();
+})();
+</script>`;
 }
 
 /** If a beat is taller than the frame allows, shrink it so nothing is cut off. */
@@ -241,4 +311,17 @@ export async function buildHyperframesZip(
     { path: 'README.md', data: enc.encode(readme(id, p.total)) },
     ...p.files,
   ]);
+}
+
+/** The same composition as the zip, as a self-contained page with play/pause and a scrubber, for watching inside the app. */
+export async function buildHyperframesPreviewHtml(
+  data: LessonData,
+  audio: Record<string, string>,
+  slideNumber: number,
+): Promise<string> {
+  const id = `slide-${slideNumber}`;
+  const p = await plan(data, audio);
+  if (!p.beats.length) throw new Error('There are no beats to preview.');
+  const zoom = await fitZoom((z) => compositionHtml(data, p, id, z), p.beats.length);
+  return compositionHtml(data, p, id, zoom, audio);
 }
