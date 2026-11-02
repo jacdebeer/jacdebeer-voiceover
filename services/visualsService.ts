@@ -5,6 +5,32 @@ import { LessonData, spokenLines } from './lessonPlayer';
 
 export type VisualsLevel = 'g8' | 'g9' | 'g10' | 'g11' | 'g12' | 'univ';
 
+const SAMPLE_RATE = 24000;
+const FADE_IN_MS = 8;
+const FADE_OUT_MS = 25;
+const TAIL_SILENCE_MS = 150;
+
+/**
+ * Each line is its own clip, so a hard start or stop is heard as a click at every transition.
+ * Fade the first and last few milliseconds and end with a little silence so the next line starts clean.
+ */
+function smoothClip(pcm: Uint8Array): Uint8Array {
+  const samples = Math.floor(pcm.length / 2);
+  const tail = Math.round((SAMPLE_RATE * TAIL_SILENCE_MS) / 1000);
+  const out = new Uint8Array((samples + tail) * 2);
+  const src = new DataView(pcm.buffer, pcm.byteOffset, samples * 2);
+  const dst = new DataView(out.buffer);
+  const fin = Math.min(samples, Math.round((SAMPLE_RATE * FADE_IN_MS) / 1000));
+  const fout = Math.min(samples, Math.round((SAMPLE_RATE * FADE_OUT_MS) / 1000));
+  for (let i = 0; i < samples; i++) {
+    let gain = 1;
+    if (i < fin) gain = i / fin;
+    if (i >= samples - fout) gain = Math.min(gain, (samples - 1 - i) / fout);
+    dst.setInt16(i * 2, Math.round(src.getInt16(i * 2, true) * gain), true);
+  }
+  return out;
+}
+
 const POLL_MS = 2000;
 const POLL_LIMIT = 150; // 5 minutes
 
@@ -58,7 +84,7 @@ export async function narrateLines(
       if (signal?.aborted) throw new DOMException('Stopped', 'AbortError');
       const line = lines[next++];
       const pcmBase64 = await generateSpeechForVoice(voice, line, isAfrikaans);
-      const wav = pcmToWavBlob(decodeBase64(pcmBase64), 24000);
+      const wav = pcmToWavBlob(smoothClip(decodeBase64(pcmBase64)), 24000);
       audio[line] = 'data:audio/wav;base64,' + (await blobToBase64(wav));
       onProgress(++done, lines.length);
     }

@@ -1066,7 +1066,7 @@ const App: React.FC = () => {
 
             {/* Right: Realistic Conversational Voice Studio & Generation */}
             <div className="lg:col-span-5 flex flex-col min-h-0">
-              <div className="flex-1 flex flex-col min-h-0 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 overflow-hidden">
+              <div className="flex-1 flex flex-col min-h-0 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 overflow-y-auto custom-scrollbar">
                 
                 <div className="flex-none flex items-center justify-between mb-3">
                   <div className="flex items-center space-x-3">
@@ -1142,7 +1142,7 @@ const App: React.FC = () => {
                         <button
                           onClick={() => setShowVisuals(true)}
                           disabled={!text.trim()}
-                          className="col-span-2 py-3 px-3 rounded-xl border-2 border-violet-100 text-violet-700 font-bold hover:bg-violet-50 disabled:opacity-40 transition-colors flex items-center justify-center gap-2 text-xs"
+                          className="col-span-2 py-2 px-3 rounded-xl border-2 border-violet-100 text-violet-700 font-bold hover:bg-violet-50 disabled:opacity-40 transition-colors flex items-center justify-center gap-2 text-xs"
                         >
                           <Wand2 size={14} />
                           <span>{language === 'af' ? 'Skyfie-beelde' : 'Slide visuals'}</span>

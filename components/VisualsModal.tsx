@@ -169,12 +169,10 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
                 {af ? 'Die stem hier is nie die gekose verteller nie.' : 'The voice in this preview is not the currently selected narrator.'}
               </div>
             )}
-            {entry && (
-              <button onClick={download}
-                className="w-full py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 flex items-center justify-center gap-2">
-                <Download size={13} /> {af ? 'Laai .html af' : 'Download standalone .html'}
-              </button>
-            )}
+            <button onClick={download} disabled={!entry || busy}
+              className="w-full py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+              <Download size={13} /> {af ? 'Laai .html af' : 'Download standalone .html'}
+            </button>
           </div>
 
           <div className="flex-1 min-h-0 bg-slate-50">
