@@ -31,3 +31,12 @@ The **Slide visuals** button in the studio turns the current slide's text into a
 Add this environment variable on the Netlify site (mark it secret): `ANTHROPIC_API_KEY`.
 
 Not included yet: visuals and their audio are kept in memory for the open page only (use Download .html to keep them); they are not saved to the workspace. The Azure narration and e-mail-code sign-in from the explainer are not used here.
+
+### Animation and video export (HyperFrames)
+
+- The live player animates each beat in and highlights the row being spoken. It follows `prefers-reduced-motion`.
+- **HyperFrames video project (.zip)** in the Slide visuals window downloads `index.html` plus one audio clip per spoken line, timed from the real length of each clip. It is a HyperFrames composition (1920x1080, GSAP timeline), checked with `npx hyperframes lint` and rendered with `npx hyperframes render`.
+- Render it on your own machine (Node 22+ and FFmpeg). The composition loads GSAP from jsDelivr, so the first render needs internet access.
+- Known lint warnings: each beat is a plain section rather than a sub-composition. Rendering is not affected.
+- The **Video (HyperFrames)** tab in the Slide visuals window plays the same composition inside the app, with the voice, a play/pause button and a scrubber. It loads GSAP from jsDelivr.
+- Gemini's audio is cleaned on arrival (`utils/audioClean.ts`): a few junk samples at the start and a burst of loud noise at the end are cut. Measured on a real clip: 8 junk samples and 127 ms of noise.

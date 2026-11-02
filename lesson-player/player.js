@@ -291,6 +291,9 @@ function renderBeat(){
   si = showAll ? steps.length : 0;
   paint();
   document.getElementById('pCap').textContent = b.caption || '';
+  /* beat entrance: restart the CSS animation on the stage and the caption bar */
+  var capEl = document.getElementById('pCap');
+  [st, capEl].forEach(function(n){ n.classList.remove('enter'); void n.offsetWidth; n.classList.add('enter'); });
   navPaint();
 }
 
@@ -307,8 +310,9 @@ function stepFwd(){
     si++;
     var r = steps[si-1];
     r.classList.remove('hide');
-    r.classList.add('pop');
-    setTimeout(function(){ r.classList.remove('pop'); }, 460);
+    steps.forEach(function(x){ x.classList.remove('now'); });
+    r.classList.add('pop', 'now');
+    setTimeout(function(){ r.classList.remove('pop'); }, 620);
     paint();
     return true;
   }

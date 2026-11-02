@@ -2,6 +2,7 @@ import { VoiceOption } from '../types';
 import { generateSpeechForVoice, blobToBase64 } from './geminiService';
 import { decodeBase64, pcmToWavBlob } from '../utils/audioUtils';
 import { LessonData, spokenLines } from './lessonPlayer';
+import { cleanClip } from '../utils/audioClean';
 
 export type VisualsLevel = 'g8' | 'g9' | 'g10' | 'g11' | 'g12' | 'univ';
 
@@ -58,7 +59,7 @@ export async function narrateLines(
       if (signal?.aborted) throw new DOMException('Stopped', 'AbortError');
       const line = lines[next++];
       const pcmBase64 = await generateSpeechForVoice(voice, line, isAfrikaans);
-      const wav = pcmToWavBlob(decodeBase64(pcmBase64), 24000);
+      const wav = pcmToWavBlob(cleanClip(decodeBase64(pcmBase64)), 24000);
       audio[line] = 'data:audio/wav;base64,' + (await blobToBase64(wav));
       onProgress(++done, lines.length);
     }

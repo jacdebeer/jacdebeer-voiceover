@@ -33,8 +33,17 @@ td.ctr{text-align:center}
 tr.tot td{font-weight:800;background:#F7F9FC;border-top:2px solid var(--ink)}
 tr.tot td.num{border-bottom:3px double var(--ink)}
 tr.hide{display:none}
-tr.pop{animation:pop .45s ease}
-@keyframes pop{from{background:#FEF3C7}to{background:transparent}}
+tr.pop{animation:rowIn .6s cubic-bezier(.2,.8,.2,1)}
+@keyframes rowIn{from{opacity:0;transform:translateY(12px);background:#FEF3C7}55%{background:#FEF3C7}to{opacity:1;transform:none;background:transparent}}
+tr.now > td:first-child{box-shadow:inset 4px 0 0 var(--accent)}
+.stage.enter > *{animation:stageIn .55s cubic-bezier(.2,.8,.2,1) both}
+.stage.enter > *:nth-child(2){animation-delay:.06s}
+.stage.enter > *:nth-child(3){animation-delay:.12s}
+.stage.enter > *:nth-child(n+4){animation-delay:.18s}
+@keyframes stageIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.cap.enter{animation:capIn .4s ease both}
+@keyframes capIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 .docNo{font-family:ui-monospace,Consolas,monospace;font-weight:700}
 .doc{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px;max-width:560px;box-shadow:0 1px 0 rgba(0,0,0,.05)}
 .doc .dh{display:flex;justify-content:space-between;gap:14px;border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:10px}

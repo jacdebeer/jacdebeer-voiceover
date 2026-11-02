@@ -1,4 +1,6 @@
 import { VoiceName, VoiceOption } from "../types";
+import { stripArtifacts, bytesToBase64 } from "../utils/audioClean";
+import { decodeBase64 } from "../utils/audioUtils";
 
 /**
  * Converts a Blob to a base64 encoded string.
@@ -60,6 +62,8 @@ export async function generateSpeech(
     throw new Error("No audio data returned from the server.");
   }
 
+  // Gemini's PCM has junk at both ends (a click at the start, a noise burst at the end). ElevenLabs audio is clean.
+  if (provider === 'gemini') return bytesToBase64(stripArtifacts(decodeBase64(data.audioBase64)));
   return data.audioBase64;
 }
 
