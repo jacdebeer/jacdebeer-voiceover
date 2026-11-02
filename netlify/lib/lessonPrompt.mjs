@@ -38,12 +38,12 @@ var SCHEMA = [
 '7 {"type":"trial_balance","title":"Proefbalans","accounts":[{"name":"Verkope","fol":"N1","debit":0,"credit":4600}]}',
 '8 {"type":"text","tone":"info|rule|warn","heading":"optional","body":"short explanation"}',
 '9 {"type":"flow","steps":[{"label":"Bronstuk","text":"Faktuur F231"},{"label":"Joernaal","text":"Debiteurejoernaal"},{"label":"Grootboek","text":"Algemene Grootboek"}]}',
-'10 {"type":"formula","title":"optional","parts":[{"text":"Bates","tone":"blue"},{"op":"="},{"text":"Eienaarsbelang","tone":"green"},{"op":"+"},{"text":"Laste","tone":"amber"}]}',
+'10 {"type":"formula","title":"optional","parts":[{"text":"Bates","icon":"🏦","tone":"blue"},{"op":"="},{"text":"Eienaarsbelang","tone":"green"},{"op":"+"},{"text":"Laste","tone":"amber"}]}',
 '   - Big equation tiles. Each {"text"} part is revealed on its own line. {"op"} parts only supply the sign shown before the next tile. tone: blue|green|amber|red. Optional "sub" under the text.',
-'11 {"type":"cards","title":"optional","cards":[{"badge":"B","label":"Bates","text":"Wat die onderneming besit","tone":"blue"}]}',
+'11 {"type":"cards","title":"optional","cards":[{"badge":"B","icon":"🏦","label":"Bates","text":"Wat die onderneming besit","tone":"blue"}]}',
 '   - Labelled cards, one revealed per line. Use for lists of categories, rules, or definitions. badge is an optional short tag (a letter or number).',
-'12 {"type":"change","title":"optional","items":[{"label":"Skryfbehoeftes","dir":"up","note":"Uitgawe neem toe: debiteer"},{"label":"Bank","dir":"down","note":"Bate neem af: krediteer"}]}',
-'   - Up/down effect chips (dir is "up" or "down"), one revealed per line. Use to show which accounts increase or decrease.',
+'12 {"type":"change","title":"optional","items":[{"label":"Skryfbehoeftes","icon":"✏️","dir":"up","note":"Uitgawe neem toe: debiteer"},{"label":"Bank","dir":"down","note":"Bate neem af: krediteer"}]}',
+'   - Every card, formula part, change item and flow step may carry "icon": one emoji. Up/down effect chips (dir is "up" or "down"), one revealed per line. Use to show which accounts increase or decrease.',
   ].join('\n');
 
   /* Controlled vocabulary: af.wikipedia.org/wiki/Lys_van_rekeningkundige_vakbegrippe (115 terms, retrieved 2026-09-06). */

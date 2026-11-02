@@ -217,6 +217,9 @@ function rTrialBalance(b){
   return wrap;
 }
 
+/* one optional emoji, drawn before a label; anything longer than a short emoji sequence is ignored */
+function ico(x){ var t = (typeof x === 'string') ? x.trim() : ''; return (t && t.length <= 8) ? '<span class="ico">' + esc(t) + '</span>' : ''; }
+
 function rText(b){
   var e = el('div','callout ' + (b.tone||''));
   e.setAttribute('data-reveal','');
@@ -229,7 +232,7 @@ function rFlow(b){
   (b.steps||[]).forEach(function(s, i){
     var st = el('div','step');
     st.setAttribute('data-reveal','');
-    st.innerHTML = (i ? '<span class="arw">\u2192</span>' : '') + '<b>' + esc(s.label||'') + '</b>' + esc(s.text||'');
+    st.innerHTML = (i ? '<span class="arw">\u2192</span>' : '') + '<b>' + ico(s.icon) + esc(s.label||'') + '</b>' + esc(s.text||'');
     f.appendChild(st);
   });
   return f;
@@ -244,7 +247,7 @@ function rFormula(b){
     var t = el('div','ftile ' + (p.tone||'blue'));
     t.setAttribute('data-reveal','');
     t.innerHTML = (pendingOp ? '<span class="fop">' + esc(pendingOp) + '</span>' : '') +
-      '<span class="fbox"><b>' + esc(p.text||'') + '</b>' + (p.sub ? '<i>' + esc(p.sub) + '</i>' : '') + '</span>';
+      '<span class="fbox">' + (ico(p.icon) ? '<span class="ficon">' + ico(p.icon) + '</span>' : '') + '<b>' + esc(p.text||'') + '</b>' + (p.sub ? '<i>' + esc(p.sub) + '</i>' : '') + '</span>';
     pendingOp = '';
     f.appendChild(t);
   });
@@ -258,7 +261,7 @@ function rCards(b){
     var d = el('div','card2 ' + (c.tone||'blue'));
     d.setAttribute('data-reveal','');
     d.innerHTML = (c.badge ? '<span class="badge">' + esc(c.badge) + '</span>' : '') +
-      '<b>' + esc(c.label||'') + '</b>' + (c.text ? '<span>' + esc(c.text) + '</span>' : '');
+      '<b>' + ico(c.icon) + esc(c.label||'') + '</b>' + (c.text ? '<span>' + esc(c.text) + '</span>' : '');
     g.appendChild(d);
   });
   return g;

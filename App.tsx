@@ -15,6 +15,7 @@ import { Controls } from './components/Controls';
 import { TranscriptionPanel } from './components/TranscriptionPanel';
 import { LiveConversationModal } from './components/LiveConversationModal';
 import { VisualsModal, VisualsEntry } from './components/VisualsModal';
+import { isAfrikaansText } from './utils/language';
 
 // Live chat needs the WebSocket server in server.ts, which Netlify cannot host.
 // Vite sets DEV to true only when running locally.
@@ -436,7 +437,7 @@ const App: React.FC = () => {
     abortControllerRef.current = new AbortController();
     try {
       const selectedVoice = getSelectedVoice();
-      const base64 = await generateSpeechForVoice(selectedVoice, text, language === 'af');
+      const base64 = await generateSpeechForVoice(selectedVoice, text, isAfrikaansText(text, language));
       setAudioSourceFromBase64(base64);
       ensureAudioContext();
       
@@ -491,7 +492,7 @@ const App: React.FC = () => {
         const page = pages[i];
         if (!page.text || page.audioData) continue;
         try {
-          const base64 = await generateSpeechForVoice(selectedVoice, page.text, language === 'af');
+          const base64 = await generateSpeechForVoice(selectedVoice, page.text, isAfrikaansText(page.text, language));
           const audioBytes = decodeBase64(base64);
           void saveAudio(`p-${page.id}`, audioBytes);
           updatedPages[i] = { ...updatedPages[i], audioData: audioBytes };

@@ -3,6 +3,8 @@ import { getUser } from '@netlify/identity';
 import { getStore } from '@netlify/blobs';
 import type { Config } from '@netlify/functions';
 import { VISUALS_STORE, LEVELS, type Level } from '../lib/visualsJob.mts';
+// @ts-ignore - plain JS module
+import { afrikaansGlossaryPrompt } from '../lib/afrikaansTerms.mjs';
 
 // Same endpoints and response shapes as the Express routes in server.ts,
 // so the browser code in services/geminiService.ts needs no changes.
@@ -125,7 +127,8 @@ async function ttsElevenLabs(body: any): Promise<Response> {
   const res = await fetch(`${ELEVENLABS_BASE}/v1/text-to-speech/${voiceId}?output_format=pcm_24000`, {
     method: 'POST',
     headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, model_id: 'eleven_v3', language_code: languageCode }),
+    // stability 1.0 is v3's "Robust" setting: the voice varies least from one line to the next.
+    body: JSON.stringify({ text, model_id: 'eleven_v3', language_code: languageCode, voice_settings: { stability: 1.0 } }),
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
@@ -154,7 +157,11 @@ async function tts(ai: GoogleGenAI, body: any): Promise<Response> {
   const defaultStyle = isAfrikaans
     ? 'Natuurlike, warm, lewendige en boeiende Afrikaanse spraakstyl met outentieke intonasie en duidelike artikulasie.'
     : 'Natural, conversational, engaging e-learning voice-over narrator with clear pacing.';
-  const speechStyle = typeof style === 'string' && style.trim() ? style.trim().slice(0, 500) : defaultStyle;
+  const baseStyle = typeof style === 'string' && style.trim() ? style.trim().slice(0, 400) : defaultStyle;
+  // Without a language hint Gemini guesses the language sentence by sentence, and short Afrikaans lines drift to Dutch.
+  const speechStyle = isAfrikaans
+    ? `${baseStyle} Taal: Suid-Afrikaanse Afrikaans (af-ZA), nooit Nederlands nie. Gebruik Afrikaanse uitspraak en klanke, en dieselfde stem en tempo deurgaans.`
+    : baseStyle;
   let targetVoice = VALID_VOICES.includes(voiceName) ? voiceName : 'Kore';
   if (libraryVoice === true) {
     if (typeof voiceName !== 'string' || !LIBRARY_VOICE_ID.test(voiceName)) {
@@ -200,7 +207,10 @@ async function translate(ai: GoogleGenAI, body: any): Promise<Response> {
       {
         parts: [
           {
-            text: `Translate the following text to ${targetLanguage}. Maintain an educational, engaging, and conversational tone suitable for course audio narration. Do not include any notes, preamble, or commentary, just the translated text: "${text}"`,
+            text:
+              `Translate the following text to ${targetLanguage}. Maintain an educational, engaging, and conversational tone suitable for course audio narration. Do not include any notes, preamble, or commentary, just the translated text.` +
+              (targetLanguage === 'Afrikaans' ? `\n\n${afrikaansGlossaryPrompt()}` : '') +
+              `\n\nText: "${text}"`,
           },
         ],
       },
@@ -216,7 +226,7 @@ async function enhance(ai: GoogleGenAI, body: any): Promise<Response> {
 
   const prompt =
     language === 'af'
-      ? `Herskryf die volgende lesing-teks om te klink soos 'n lewendige, natuurlike en boeiende Afrikaanse stemopname. Maak die sinsbou vloeiend vir spraak, voeg warm natuurlike oorgange by (soos "Welkom by...", "Kom ons kyk na...", "Onthou dat..."), maar behou alle noodsaaklike inligting akkuraat. Gee SLEGS die herskrewe Afrikaanse teks terug sonder notas:\n\n${text}`
+      ? `Herskryf die volgende lesing-teks om te klink soos 'n lewendige, natuurlike en boeiende Afrikaanse stemopname. Maak die sinsbou vloeiend vir spraak, voeg warm natuurlike oorgange by (soos "Welkom by...", "Kom ons kyk na...", "Onthou dat..."), maar behou alle noodsaaklike inligting akkuraat. Gee SLEGS die herskrewe Afrikaanse teks terug sonder notas.\n\n${afrikaansGlossaryPrompt()}\n\nTeks:\n${text}`
       : `Rewrite the following lecture text to sound like an engaging, conversational, natural voice-over script. Make sentences flow effortlessly for speech, but retain all essential facts. Return ONLY the rewritten text:\n\n${text}`;
 
   const response = await ai.models.generateContent({

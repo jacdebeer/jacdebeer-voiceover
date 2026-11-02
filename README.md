@@ -42,3 +42,11 @@ Not included yet: visuals and their audio are kept in memory for the open page o
 - Gemini's audio is cleaned on arrival (`utils/audioClean.ts`): a few junk samples at the start and a burst of loud noise at the end are cut. Measured on a real clip: 8 junk samples and 127 ms of noise.
 - New visual blocks for concept slides: `formula` (big equation tiles), `cards` (labelled cards) and `change` (up/down chips). `text` and `flow` blocks now reveal one element at a time with the voice, like table rows do. The prompt asks for at least one non-text visual per beat.
 - The video export scales each beat up or down to fill the 1920x1080 frame.
+
+### Afrikaans terminology and voice
+
+- `netlify/lib/afrikaansTerms.mjs` is the app's built-in Afrikaans glossary: 136 standard terms from the Raad op Rekeningkundige Standaarde glossary (2014), 96 English-to-Afrikaans pairs from N. Stegmann's review of Juta's accounting dictionary (Lexikos 10, 2000, using the review's preferred or replacement terms where it gives one), and a list of Dutch forms to avoid. The existing house terms in `lessonPrompt.mjs` still win where they differ.
+- It is sent to Claude for every Afrikaans visuals job, and to Gemini for Translate and Conversational Polish when the target is Afrikaans.
+- Voice: Gemini now gets an explicit instruction to speak South African Afrikaans (not Dutch) on every Afrikaans line, whatever the voice's own style prompt says. ElevenLabs keeps `language_code: af` and now uses Eleven v3's most stable setting, so the voice varies less from line to line.
+- If the slide text is clearly Afrikaans but the ENG/AFR toggle says English, the text is still voiced as Afrikaans.
+- Visuals: every card, formula part, change item and flow step can carry one emoji icon (shown on screen only, never spoken).

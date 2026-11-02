@@ -4,6 +4,7 @@ import { VoiceOption } from '../types';
 import { LessonData, buildPlayerHtml, checkScript } from '../services/lessonPlayer';
 import { generateVisuals, narrateLines, VisualsLevel } from '../services/visualsService';
 import { buildHyperframesZip, buildHyperframesPreviewHtml } from '../services/hyperframesExport';
+import { isAfrikaansText } from '../utils/language';
 
 /** What is kept for one slide while the page stays open. */
 export interface VisualsEntry {
@@ -44,8 +45,10 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const busy = phase !== 'idle';
+  // the voice, the prompt and the stored result all follow the text itself, not just the toggle
+  const textLang: 'en' | 'af' = isAfrikaansText(slideText, language) ? 'af' : 'en';
   const af = language === 'af';
-  const stale = entry && (entry.slideText !== slideText || entry.lang !== language);
+  const stale = entry && (entry.slideText !== slideText || entry.lang !== textLang);
   const voiceChanged = entry && entry.voiceId !== voice.id;
 
   const run = async (reuseVisuals: boolean) => {
@@ -56,11 +59,11 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
       let data = reuseVisuals && entry ? entry.data : null;
       if (!data) {
         setPhase('visuals');
-        data = await generateVisuals({ text: slideText, lang: language, level, currency }, ctl.signal);
+        data = await generateVisuals({ text: slideText, lang: textLang, level, currency }, ctl.signal);
       }
       setPhase('voice');
-      const audio = await narrateLines(data, voice, af, (done, total) => setProgress({ done, total }), ctl.signal);
-      onEntry({ data, audio, slideText, voiceId: voice.id, lang: language });
+      const audio = await narrateLines(data, voice, textLang === 'af', (done, total) => setProgress({ done, total }), ctl.signal);
+      onEntry({ data, audio, slideText, voiceId: voice.id, lang: textLang });
     } catch (e: any) {
       if (e?.name === 'AbortError') setError('Stopped.');
       else if (e?.isQuotaExceeded) setError('The narrator voice has reached its quota. Try another voice, or wait and retry.');

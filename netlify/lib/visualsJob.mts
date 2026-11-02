@@ -1,6 +1,8 @@
 // Slide visuals: shared prompt-building for the queue (api.mts) and the worker (visuals-background.mts).
 // @ts-ignore - plain JS module ported from GSA-accounts-explainer
 import { SYSTEM, RECORDING_RULES, LEDGER_RULE, LEVEL_GUIDES } from './lessonPrompt.mjs';
+// @ts-ignore - plain JS module
+import { afrikaansGlossaryPrompt } from './afrikaansTerms.mjs';
 
 export const VISUALS_STORE = 'visual-jobs';
 export const VISUALS_MODEL = 'claude-haiku-5-5';
@@ -24,8 +26,14 @@ const SLIDE_TEXT_RULE = [
   '   - Everything on screen is revealed one element at a time, in step with the voice. Aim for one narration entry per revealed element (each formula part, card, change item, flow step, table row), and keep each beat to 2 to 5 revealed elements so the pace stays watchable.',
 ].join('\n');
 
-export function buildSystem(): string {
-  return SYSTEM + '\n' + SLIDE_TEXT_RULE;
+// Emoji make the visuals friendlier. They are drawn on screen only, never spoken, so they stay out of caption and narration.
+const ICON_RULE = [
+  '',
+  'I. ICONS. Give every card, formula part, change item and flow step an "icon": ONE emoji that fits it, for example 🧾 source document, 💰 cash or money, 🏦 bank, 📒 journal or ledger, 📊 statements or reports, 🧮 calculation, ✏️ stationery, 📦 stock or inventory, 🏭 production, 🛒 purchases, 🏷️ sales, 📈 increase, 📉 decrease, ⚖️ balance or equation, ✅ correct, ⚠️ warning, 💡 tip, 👤 person or debtor, 🤝 agreement. Use exactly one emoji, never in "caption" or "narration", never several in a row.',
+].join('\n');
+
+export function buildSystem(lang: 'en' | 'af' = 'en'): string {
+  return SYSTEM + '\n' + SLIDE_TEXT_RULE + '\n' + ICON_RULE + (lang === 'af' ? '\n\n' + afrikaansGlossaryPrompt() : '');
 }
 
 export function buildUserText(opts: { text: string; lang: 'en' | 'af'; level: Level; currency: string }): string {

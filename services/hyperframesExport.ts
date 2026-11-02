@@ -163,6 +163,10 @@ function compositionHtml(
 <title>${esc(String(data.title || 'Slide explainer'))}</title>
 <style>
 ${playerCss.replace(/html\{font-size:var\(--fs\)\}/, '').replace(/transition:[^;}]*;?/g, '')}
+/* the emoji fonts are OS-bundled: local() tells the renderer to use the machine's own copy */
+@font-face{font-family:'Apple Color Emoji';src:local('Apple Color Emoji')}
+@font-face{font-family:'Segoe UI Emoji';src:local('Segoe UI Emoji')}
+@font-face{font-family:'Noto Color Emoji';src:local('Noto Color Emoji')}
 html{font-size:${FONT_PX}px}
 html,body{margin:0;padding:0;background:#EEF1F6}
 #stage{position:relative;width:${W}px;height:${H}px;overflow:hidden;background:#EEF1F6;font-family:var(--font)}

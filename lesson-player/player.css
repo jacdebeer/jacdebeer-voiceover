@@ -115,7 +115,8 @@ table.t tr.tot td.num{border-bottom:3px double var(--ink)}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 .card2{position:relative;border-radius:14px;padding:16px 18px;border:2px solid;box-shadow:0 2px 0 rgba(0,0,0,.05)}
 .card2 b{display:block;font-size:1.1rem;margin-bottom:4px}
-.card2 span{display:block;font-size:.85rem;line-height:1.45}
+.card2 > span:not(.badge){display:block;font-size:.85rem;line-height:1.45}
+.card2 b .ico{font-size:1.25em;margin-right:.3em;vertical-align:-.08em}
 .card2 .badge{position:absolute;top:-12px;left:14px;font-size:.72rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:3px 10px;border-radius:999px;background:var(--ink);color:#fff}
 .card2.blue{background:#EFF4FF;border-color:#93B4FF;color:#1E3A8A}
 .card2.green{background:#ECFDF5;border-color:#6EE7B7;color:#065F46}
@@ -129,3 +130,8 @@ table.t tr.tot td.num{border-bottom:3px double var(--ink)}
 .chg .ctext i{display:block;font-style:normal;font-size:.8rem;margin-top:2px;opacity:.85}
 .chg.up{background:#ECFDF5;border-color:#6EE7B7;color:#065F46}
 .chg.down{background:#FEF2F2;border-color:#FCA5A5;color:#991B1B}
+
+.ico{display:inline-block;margin-right:.35em;font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif;font-style:normal;font-weight:400}
+.ficon{display:block;font-size:1.5rem;line-height:1.1;margin-bottom:2px}
+.ficon .ico{margin:0}
+.chg .ctext b .ico{font-size:1.15em;margin-right:.3em}
