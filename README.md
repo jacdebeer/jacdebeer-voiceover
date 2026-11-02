@@ -40,3 +40,5 @@ Not included yet: visuals and their audio are kept in memory for the open page o
 - Known lint warnings: each beat is a plain section rather than a sub-composition. Rendering is not affected.
 - The **Video (HyperFrames)** tab in the Slide visuals window plays the same composition inside the app, with the voice, a play/pause button and a scrubber. It loads GSAP from jsDelivr.
 - Gemini's audio is cleaned on arrival (`utils/audioClean.ts`): a few junk samples at the start and a burst of loud noise at the end are cut. Measured on a real clip: 8 junk samples and 127 ms of noise.
+- New visual blocks for concept slides: `formula` (big equation tiles), `cards` (labelled cards) and `change` (up/down chips). `text` and `flow` blocks now reveal one element at a time with the voice, like table rows do. The prompt asks for at least one non-text visual per beat.
+- The video export scales each beat up or down to fill the 1920x1080 frame.

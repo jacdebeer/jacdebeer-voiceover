@@ -256,7 +256,12 @@ function previewDriver(p: Awaited<ReturnType<typeof plan>>, audioUris: Record<st
 </script>`;
 }
 
-/** If a beat is taller than the frame allows, shrink it so nothing is cut off. */
+const ZOOMS = [2.4, 2.2, 2, 1.8, 1.65, 1.5, 1.35, 1.2, 1.1, 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.45];
+
+/**
+ * Pick a zoom per beat so the content fills the frame: scale small beats up, shrink tall ones down.
+ * Each candidate is measured in a real 1920x1080 layout, because wider text wraps differently at each zoom.
+ */
 async function fitZoom(html: (zoom: number[]) => string, count: number): Promise<number[]> {
   const f = document.createElement('iframe');
   f.style.cssText = `position:fixed;left:-99999px;top:0;width:${W}px;height:${H}px;border:0`;
@@ -268,10 +273,24 @@ async function fitZoom(html: (zoom: number[]) => string, count: number): Promise
     const doc = f.contentDocument!;
     const room = H - 48 - 150; // frame minus the beat's top and bottom padding
     for (let i = 0; i < count; i++) {
-      const inner = doc.querySelector(`#beat${i} .beatInner`) as HTMLElement;
-      const kids = Array.from(inner.children) as HTMLElement[];
-      const natural = kids.reduce((n, k) => n + k.offsetHeight + 14, 0);
-      out.push(natural > room ? Math.max(0.45, +(room / natural).toFixed(3)) : 1);
+      const beat = doc.querySelector(`#beat${i}`) as HTMLElement;
+      const inner = beat.querySelector('.beatInner') as HTMLElement;
+      beat.style.display = 'block';
+      beat.style.opacity = '1';
+      // every revealed element must be on screen when measuring
+      beat.querySelectorAll('[data-reveal]').forEach((n) => ((n as HTMLElement).style.cssText += ';visibility:visible;opacity:1'));
+      let chosen = ZOOMS[ZOOMS.length - 1];
+      for (const z of ZOOMS) {
+        inner.style.zoom = String(z);
+        const top = inner.getBoundingClientRect().top;
+        const kids = Array.from(inner.children) as HTMLElement[];
+        const bottom = Math.max(...kids.map((k) => k.getBoundingClientRect().bottom));
+        if (bottom - top <= room) {
+          chosen = z;
+          break;
+        }
+      }
+      out.push(chosen);
     }
   } finally {
     f.remove();

@@ -219,6 +219,7 @@ function rTrialBalance(b){
 
 function rText(b){
   var e = el('div','callout ' + (b.tone||''));
+  e.setAttribute('data-reveal','');
   e.innerHTML = (b.heading ? '<b>' + esc(b.heading) + '</b>' : '') + esc(b.body||'').replace(/\n/g,'<br>');
   return e;
 }
@@ -226,12 +227,54 @@ function rText(b){
 function rFlow(b){
   var f = el('div','flow');
   (b.steps||[]).forEach(function(s, i){
-    if(i) f.appendChild(el('div','arw','\u2192'));
     var st = el('div','step');
-    st.innerHTML = '<b>' + esc(s.label||'') + '</b>' + esc(s.text||'');
+    st.setAttribute('data-reveal','');
+    st.innerHTML = (i ? '<span class="arw">\u2192</span>' : '') + '<b>' + esc(s.label||'') + '</b>' + esc(s.text||'');
     f.appendChild(st);
   });
   return f;
+}
+
+/* big equation tiles, e.g. Bates = Eienaarsbelang + Laste. parts: [{text, tone?, sub?}] or [{op:'='}]. Each tile appears on its own line. */
+function rFormula(b){
+  var f = el('div','formula');
+  var pendingOp = '';
+  (b.parts||[]).forEach(function(p){
+    if(p.op){ pendingOp = p.op; return; }
+    var t = el('div','ftile ' + (p.tone||'blue'));
+    t.setAttribute('data-reveal','');
+    t.innerHTML = (pendingOp ? '<span class="fop">' + esc(pendingOp) + '</span>' : '') +
+      '<span class="fbox"><b>' + esc(p.text||'') + '</b>' + (p.sub ? '<i>' + esc(p.sub) + '</i>' : '') + '</span>';
+    pendingOp = '';
+    f.appendChild(t);
+  });
+  return f;
+}
+
+/* labelled cards in a grid. cards: [{label, text, tone?, badge?}] */
+function rCards(b){
+  var g = el('div','cards');
+  (b.cards||[]).forEach(function(c){
+    var d = el('div','card2 ' + (c.tone||'blue'));
+    d.setAttribute('data-reveal','');
+    d.innerHTML = (c.badge ? '<span class="badge">' + esc(c.badge) + '</span>' : '') +
+      '<b>' + esc(c.label||'') + '</b>' + (c.text ? '<span>' + esc(c.text) + '</span>' : '');
+    g.appendChild(d);
+  });
+  return g;
+}
+
+/* up / down effect chips. items: [{label, dir:'up'|'down', note?}] */
+function rChange(b){
+  var g = el('div','changes');
+  (b.items||[]).forEach(function(it){
+    var up = it.dir === 'up';
+    var d = el('div','chg ' + (up ? 'up' : 'down'));
+    d.setAttribute('data-reveal','');
+    d.innerHTML = '<span class="arrow">' + (up ? '▲' : '▼') + '</span><span class="ctext"><b>' + esc(it.label||'') + '</b>' + (it.note ? '<i>' + esc(it.note) + '</i>' : '') + '</span>';
+    g.appendChild(d);
+  });
+  return g;
 }
 
 function rCalc(b){
@@ -248,7 +291,8 @@ function rCalc(b){
 var RENDER = {
   source_document: rSourceDoc, journal: rJournal, t_accounts: rTAccounts,
   ledger_columnar: rLedgerCol, equation: rEquation, trial_balance: rTrialBalance,
-  text: rText, flow: rFlow, calculation: rCalc
+  text: rText, flow: rFlow, calculation: rCalc,
+  formula: rFormula, cards: rCards, change: rChange
 };
 
 /* ---------- player ---------- */
@@ -267,7 +311,7 @@ function renderBeat(){
     var fn = RENDER[blk.type];
     if(!fn) return;
     var w = el('div','block');
-    var selfCaption = ['journal','ledger_columnar','equation','trial_balance','calculation'].indexOf(blk.type) > -1;
+    var selfCaption = ['journal','ledger_columnar','equation','trial_balance','calculation','formula','cards','change'].indexOf(blk.type) > -1;
     if(blk.title && !selfCaption) w.appendChild(el('div','blockTitle', esc(blk.title)));
     try { w.appendChild(fn(blk)); } catch(e){ w.appendChild(el('div','chk bad','Block error: ' + esc(e.message))); }
     st.appendChild(w);
