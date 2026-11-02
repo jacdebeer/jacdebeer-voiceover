@@ -20,6 +20,8 @@ const SLIDE_TEXT_RULE = [
   '   - Use as many beats as the script needs (1 to 7). Do not add a beat that has no script sentence behind it.',
   '   - Use ONLY the figures, names, dates and document numbers given in the script (rule E0). Put numbers in the blocks exactly as the script states them.',
   '   - Omit "quiz" entirely: it would be silent.',
+  '   - VISUALS MUST CARRY THE LESSON. Every beat needs at least one visual block that is not "text". Use "text" only for one short rule or note. When the slide explains a concept and gives no amounts, still draw it: "formula" for an equation (for example Bates = Eienaarsbelang + Laste), "cards" for categories or definitions, "change" for what goes up or down, "flow" for steps, "equation" or "t_accounts" when the slide gives figures.',
+  '   - Everything on screen is revealed one element at a time, in step with the voice. Aim for one narration entry per revealed element (each formula part, card, change item, flow step, table row), and keep each beat to 2 to 5 revealed elements so the pace stays watchable.',
 ].join('\n');
 
 export function buildSystem(): string {
