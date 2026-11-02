@@ -14,6 +14,7 @@ import { VoicePicker } from './components/VoicePicker';
 import { Controls } from './components/Controls';
 import { TranscriptionPanel } from './components/TranscriptionPanel';
 import { LiveConversationModal } from './components/LiveConversationModal';
+import { VisualsModal, VisualsEntry } from './components/VisualsModal';
 
 // Live chat needs the WebSocket server in server.ts, which Netlify cannot host.
 // Vite sets DEV to true only when running locally.
@@ -173,6 +174,9 @@ const formatTime = (seconds: number) => {
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('studio');
   const [isLiveModalOpen, setIsLiveModalOpen] = useState(false);
+  const [showVisuals, setShowVisuals] = useState(false);
+  // Visuals built for each slide, kept until the page is closed.
+  const [visualsBySlide, setVisualsBySlide] = useState<Record<number, VisualsEntry>>({});
   const [language, setLanguage] = useState<Language>(() => {
     try {
       return localStorage.getItem('app-language') === 'en' ? 'en' : 'af';
@@ -1135,6 +1139,14 @@ const App: React.FC = () => {
                           <Layers size={14} />
                           <span>{t.generateAll}</span>
                         </button>
+                        <button
+                          onClick={() => setShowVisuals(true)}
+                          disabled={!text.trim()}
+                          className="col-span-2 py-3 px-3 rounded-xl border-2 border-violet-100 text-violet-700 font-bold hover:bg-violet-50 disabled:opacity-40 transition-colors flex items-center justify-center gap-2 text-xs"
+                        >
+                          <Wand2 size={14} />
+                          <span>{language === 'af' ? 'Skyfie-beelde' : 'Slide visuals'}</span>
+                        </button>
                       </>
                     )}
                   </div>
@@ -1261,6 +1273,26 @@ const App: React.FC = () => {
         currentLanguage={language}
         onInsertToSlide={handleInsertLiveTextToSlide}
       />
+      )}
+
+      {showVisuals && (
+        <VisualsModal
+          slideNumber={pageIndex + 1}
+          slideText={text}
+          language={language}
+          voice={getSelectedVoice()}
+          entry={visualsBySlide[pages[pageIndex]?.id]}
+          onEntry={(entry) => {
+            const id = pages[pageIndex]?.id;
+            if (id === undefined) return;
+            setVisualsBySlide((prev) => {
+              const next = { ...prev };
+              if (entry) next[id] = entry; else delete next[id];
+              return next;
+            });
+          }}
+          onClose={() => setShowVisuals(false)}
+        />
       )}
 
     </div>

@@ -2,6 +2,7 @@ import { GoogleGenAI, Modality } from '@google/genai';
 import { getUser } from '@netlify/identity';
 import { getStore } from '@netlify/blobs';
 import type { Config } from '@netlify/functions';
+import { VISUALS_STORE, LEVELS, type Level } from '../lib/visualsJob.mts';
 
 // Same endpoints and response shapes as the Express routes in server.ts,
 // so the browser code in services/geminiService.ts needs no changes.
@@ -330,6 +331,56 @@ async function workspaceRoute(req: Request, route: string, userId: string): Prom
   return json({ error: 'Method not allowed' }, 405);
 }
 
+// Slide visuals: queue a job for visuals-background and let the browser poll for the result.
+async function visualsRoute(req: Request, route: string, userKey: string): Promise<Response | null> {
+  if (route === '/api/visuals' && req.method === 'POST') {
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return json({ error: 'Invalid request body' }, 400);
+    }
+    const text = cleanText(body?.text);
+    if (!text) return json({ error: 'The slide text is empty or too long.' }, 400);
+    const lang = body?.lang === 'af' ? 'af' : 'en';
+    const level: Level = (LEVELS as readonly string[]).includes(body?.level) ? body.level : 'univ';
+    const currency = typeof body?.currency === 'string' && body.currency.trim() ? body.currency.trim().slice(0, 4) : 'R';
+    if (!process.env.ANTHROPIC_API_KEY) return json({ error: 'The server is missing its Anthropic API key.' }, 500);
+
+    const jobId = crypto.randomUUID();
+    await getStore(VISUALS_STORE).setJSON(jobId, {
+      status: 'queued',
+      owner: userKey,
+      input: { text, lang, level, currency },
+      createdAt: Date.now(),
+    });
+    // Returns 202 at once; the work continues for up to 15 minutes.
+    await fetch(new URL('/.netlify/functions/visuals-background', req.url), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jobId }),
+    });
+    return json({ jobId }, 202);
+  }
+
+  const m = route.match(/^\/api\/visuals\/([0-9a-f-]{36})$/i);
+  if (m && req.method === 'GET') {
+    const store = getStore(VISUALS_STORE);
+    const job: any = await store.get(m[1], { type: 'json' });
+    if (!job || job.owner !== userKey) return json({ error: 'Job not found.' }, 404);
+    if (job.status === 'done') {
+      await store.delete(m[1]);
+      return json({ status: 'done', data: job.data });
+    }
+    if (job.status === 'error') {
+      await store.delete(m[1]);
+      return json({ status: 'error', error: job.error });
+    }
+    return json({ status: job.status });
+  }
+  return null;
+}
+
 export default async (req: Request): Promise<Response> => {
   const route = new URL(req.url).pathname.replace(/\/+$/, '');
 
@@ -356,6 +407,13 @@ export default async (req: Request): Promise<Response> => {
       console.error('ElevenLabs voice list failed:', error);
       return json({ error: 'Could not load ElevenLabs voices.' }, 502);
     }
+  }
+  try {
+    const visuals = await visualsRoute(req, route, user.id);
+    if (visuals) return visuals;
+  } catch (error) {
+    console.error('Visuals request failed:', error);
+    return json({ error: 'Could not start the visuals job.' }, 502);
   }
   try {
     const saved = await workspaceRoute(req, route, user.id);
