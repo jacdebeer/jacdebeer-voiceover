@@ -78,3 +78,51 @@ export function cleanClip(pcm: Uint8Array): Uint8Array {
   }
   return out;
 }
+
+/**
+ * Gemini TTS audio comes back with junk at both ends: a few garbage samples at the very start, and a burst of
+ * full-scale noise (about 100 to 130 ms, large DC offset) after the last word. Cut both.
+ * Measured on a real clip: first 8 samples were garbage; the last 127 ms was noise at rms ~17000 against
+ * speech that never has a mean far from zero.
+ */
+export function stripArtifacts(pcm: Uint8Array): Uint8Array {
+  const n = Math.floor(pcm.length / 2);
+  const frames = Math.floor(n / FRAME);
+  if (frames < 10) return pcm;
+  const v = new DataView(pcm.buffer, pcm.byteOffset, n * 2);
+
+  const rms = new Float32Array(frames);
+  const mean = new Float32Array(frames);
+  for (let f = 0; f < frames; f++) {
+    let sum = 0;
+    let sq = 0;
+    for (let i = f * FRAME; i < (f + 1) * FRAME; i++) {
+      const s = v.getInt16(i * 2, true);
+      sum += s;
+      sq += s * s;
+    }
+    mean[f] = sum / FRAME;
+    rms[f] = Math.sqrt(sq / FRAME);
+  }
+
+  // tail: walk back over frames that are loud with a large DC offset (speech is centred on zero)
+  let end = n;
+  let f = frames - 1;
+  while (f > 0 && rms[f] > 2000 && Math.abs(mean[f]) > 0.15 * rms[f]) f--;
+  if (f < frames - 1) end = (f + 1) * FRAME;
+
+  // head: a loud frame followed by near silence is a click, not speech
+  let start = 0;
+  let k = 0;
+  while (k < 5 && rms[k] > 2000 && rms[k + 1] < 100) k++;
+  start = k * FRAME;
+
+  if (start === 0 && end === n) return pcm;
+  return pcm.slice(start * 2, end * 2);
+}
+
+export function bytesToBase64(bytes: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
