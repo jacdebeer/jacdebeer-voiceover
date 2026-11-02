@@ -1,5 +1,5 @@
 import { VoiceName, VoiceOption } from "../types";
-import { stripArtifacts, bytesToBase64 } from "../utils/audioClean";
+import { stripArtifacts, bytesToBase64, normalizeLoudness, downsampleTo16k } from "../utils/audioClean";
 import { decodeBase64 } from "../utils/audioUtils";
 
 /**
@@ -28,7 +28,8 @@ export async function generateSpeech(
   style?: string,
   isAfrikaans: boolean = false,
   libraryVoice: boolean = false,
-  provider: 'gemini' | 'elevenlabs' = 'gemini'
+  provider: 'gemini' | 'elevenlabs' = 'gemini',
+  attempt: number = 0
 ): Promise<string> {
   if (!text || !text.trim()) {
     throw new Error("Text cannot be empty");
@@ -44,6 +45,7 @@ export async function generateSpeech(
       isAfrikaans,
       libraryVoice,
       provider,
+      attempt,
     }),
   });
 
@@ -63,23 +65,76 @@ export async function generateSpeech(
   }
 
   // Gemini's PCM has junk at both ends (a click at the start, a noise burst at the end). ElevenLabs audio is clean.
-  if (provider === 'gemini') return bytesToBase64(stripArtifacts(decodeBase64(data.audioBase64)));
-  return data.audioBase64;
+  // Every clip, from every voice, is brought to the same speech level so the volume never jumps between lines or slides.
+  const pcm = decodeBase64(data.audioBase64);
+  return bytesToBase64(normalizeLoudness(provider === 'gemini' ? stripArtifacts(pcm) : pcm));
 }
 
 /**
  * Generates speech for a VoiceOption, picking the right engine (Gemini or ElevenLabs).
  * The language follows the app-wide toggle, not the voice.
  */
-export function generateSpeechForVoice(voice: VoiceOption, text: string, isAfrikaans: boolean): Promise<string> {
+export function generateSpeechForVoice(voice: VoiceOption, text: string, isAfrikaans: boolean, attempt: number = 0): Promise<string> {
   return generateSpeech(
     text,
     voice.voiceName,
     voice.stylePrompt,
     isAfrikaans,
     voice.isLibrary === true,
-    voice.provider === 'elevenlabs' ? 'elevenlabs' : 'gemini'
+    voice.provider === 'elevenlabs' ? 'elevenlabs' : 'gemini',
+    attempt
   );
+}
+
+export interface VoiceCheck {
+  checked: boolean;
+  /** true when the take sounded Dutch */
+  heardDutch: boolean;
+  language?: string;
+  probability?: number | null;
+  dutchWords?: string[];
+  attempts: number;
+  reason?: string;
+}
+
+/** Asks the server which language the take sounds like (ElevenLabs Scribe). Never throws: an unavailable check just says so. */
+export async function checkVoiceLanguage(base64Pcm24k: string): Promise<Omit<VoiceCheck, 'attempts'>> {
+  try {
+    const pcm16 = downsampleTo16k(decodeBase64(base64Pcm24k)).slice(0, 16000 * 2 * 90); // first 90 seconds is plenty
+    const res = await fetch('/api/voice-check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pcm16kBase64: bytesToBase64(pcm16) }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.checked) return { checked: false, heardDutch: false, reason: d.reason || `check returned ${res.status}` };
+    return { checked: true, heardDutch: d.heardDutch === true, language: d.language, probability: d.probability, dutchWords: d.dutchWords };
+  } catch {
+    return { checked: false, heardDutch: false, reason: 'check unavailable' };
+  }
+}
+
+const MAX_DUTCH_RETRIES = 2;
+
+/**
+ * The Dutch filter. Voices an Afrikaans text, asks which language it sounds like, and if it sounds Dutch voices it again
+ * (a stricter instruction, a different sample) up to twice. English text is returned as it is.
+ */
+export async function generateCheckedSpeech(
+  voice: VoiceOption,
+  text: string,
+  isAfrikaans: boolean
+): Promise<{ base64: string; check: VoiceCheck }> {
+  let base64 = await generateSpeechForVoice(voice, text, isAfrikaans, 0);
+  if (!isAfrikaans) return { base64, check: { checked: false, heardDutch: false, attempts: 1, reason: 'not Afrikaans' } };
+  let attempts = 1;
+  let check = await checkVoiceLanguage(base64);
+  while (check.checked && check.heardDutch && attempts <= MAX_DUTCH_RETRIES) {
+    base64 = await generateSpeechForVoice(voice, text, isAfrikaans, attempts);
+    attempts++;
+    check = await checkVoiceLanguage(base64);
+  }
+  return { base64, check: { ...check, attempts } };
 }
 
 /**

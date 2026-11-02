@@ -50,3 +50,10 @@ Not included yet: visuals and their audio are kept in memory for the open page o
 - Voice: Gemini now gets an explicit instruction to speak South African Afrikaans (not Dutch) on every Afrikaans line, whatever the voice's own style prompt says. ElevenLabs keeps `language_code: af` and now uses Eleven v3's most stable setting, so the voice varies less from line to line.
 - If the slide text is clearly Afrikaans but the ENG/AFR toggle says English, the text is still voiced as Afrikaans.
 - Visuals: every card, formula part, change item and flow step can carry one emoji icon (shown on screen only, never spoken).
+
+### Consistent Afrikaans voice (filter, pronunciation, one take)
+
+- **Pronunciation lexicon** (`netlify/lib/pronunciation.mjs`): text sent to a voice is rewritten first. The screen, subtitles and audio lookup keep the original text. Bate/Bates become Baate/Baates (voices read them as English), BEL and the listed abbreviations are spelled out (B.E.L., K.B.A., B.T.W. ...), whole numbers become Afrikaans words (R4 600 = vier duisend ses honderd rand), and unambiguous Dutch spellings (uitgave, niet, factuur ...) become Afrikaans. Add a word to `SPELLED` or `DUTCH_TO_AFRIKAANS` to extend it.
+- **Dutch filter**: after a take is voiced, `/api/voice-check` transcribes it with ElevenLabs Scribe (needs `ELEVENLABS_API_KEY`). If the language heard is Dutch, or the transcript has two or more clearly Dutch words, the take is voiced again (stricter instruction, different sample), up to twice. If the check is unavailable the take is used and the window says "not available".
+- **One take**: Slide visuals voices the whole slide in one go, so voice, accent, tone, volume and pace cannot drift between lines, then cuts it back into lines at the pauses (`utils/segmentTake.ts`). If the cut is not trusted it voices line by line instead and says so.
+- **Volume**: every generated clip, from every voice, is brought to the same speech level (`normalizeLoudness`), with soft peak limiting instead of clipping.

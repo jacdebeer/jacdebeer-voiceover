@@ -5,6 +5,8 @@ import type { Config } from '@netlify/functions';
 import { VISUALS_STORE, LEVELS, type Level } from '../lib/visualsJob.mts';
 // @ts-ignore - plain JS module
 import { afrikaansGlossaryPrompt } from '../lib/afrikaansTerms.mjs';
+// @ts-ignore - plain JS module
+import { forSpeech, dutchWordsIn } from '../lib/pronunciation.mjs';
 
 // Same endpoints and response shapes as the Express routes in server.ts,
 // so the browser code in services/geminiService.ts needs no changes.
@@ -122,13 +124,22 @@ async function ttsElevenLabs(body: any): Promise<Response> {
     return json({ error: 'Invalid voice id' }, 400);
   }
   const languageCode = body.isAfrikaans === true ? 'af' : 'en';
+  const spoken: string = forSpeech(text, languageCode);
+  const attempt = Number.isInteger(body.attempt) && body.attempt > 0 ? Math.min(body.attempt, 5) : 0;
 
   // Afrikaans is only supported by the Eleven v3 model.
   const res = await fetch(`${ELEVENLABS_BASE}/v1/text-to-speech/${voiceId}?output_format=pcm_24000`, {
     method: 'POST',
     headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
     // stability 1.0 is v3's "Robust" setting: the voice varies least from one line to the next.
-    body: JSON.stringify({ text, model_id: 'eleven_v3', language_code: languageCode, voice_settings: { stability: 1.0 } }),
+    body: JSON.stringify({
+      text: spoken,
+      model_id: 'eleven_v3',
+      language_code: languageCode,
+      voice_settings: { stability: 1.0 },
+      // a retry (after a Dutch-sounding take) must not repeat the same sample
+      ...(attempt ? { seed: 1000 + attempt * 7919 } : {}),
+    }),
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
@@ -160,8 +171,12 @@ async function tts(ai: GoogleGenAI, body: any): Promise<Response> {
   const baseStyle = typeof style === 'string' && style.trim() ? style.trim().slice(0, 400) : defaultStyle;
   // Without a language hint Gemini guesses the language sentence by sentence, and short Afrikaans lines drift to Dutch.
   const speechStyle = isAfrikaans
-    ? `${baseStyle} Taal: Suid-Afrikaanse Afrikaans (af-ZA), nooit Nederlands nie. Gebruik Afrikaanse uitspraak en klanke, en dieselfde stem en tempo deurgaans.`
+    ? `${baseStyle} Taal: Suid-Afrikaanse Afrikaans (af-ZA), nooit Nederlands nie. Gebruik Afrikaanse uitspraak en klanke, en dieselfde stem, aksent, toon, volume en tempo deurgaans.` +
+      (Number(body.attempt) > 0
+        ? ' STRENG: elke woord moet met Afrikaanse uitspraak gesê word. Die g is \'n keelklank, v klink soos f, w soos v, en ui klink soos in Afrikaans, nie soos in Nederlands nie.'
+        : '')
     : baseStyle;
+  const spokenText: string = forSpeech(text, isAfrikaans ? 'af' : 'en');
   let targetVoice = VALID_VOICES.includes(voiceName) ? voiceName : 'Kore';
   if (libraryVoice === true) {
     if (typeof voiceName !== 'string' || !LIBRARY_VOICE_ID.test(voiceName)) {
@@ -173,7 +188,7 @@ async function tts(ai: GoogleGenAI, body: any): Promise<Response> {
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3.8-flash-lite-tts',
-      contents: [{ role: 'user', parts: [{ text, speechMetadata: { style: speechStyle } }] }] as any,
+      contents: [{ role: 'user', parts: [{ text: spokenText, speechMetadata: { style: speechStyle } }] }] as any,
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: targetVoice } } },
@@ -391,6 +406,38 @@ async function visualsRoute(req: Request, route: string, userKey: string): Promi
   return null;
 }
 
+// Dutch filter: transcribe a take with ElevenLabs Scribe and report the language it heard.
+// The browser sends 16 kHz 16-bit mono PCM as base64 (at most 90 seconds).
+async function voiceCheck(body: any): Promise<Response> {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) return json({ checked: false, reason: 'no ElevenLabs key' });
+  const b64 = body?.pcm16kBase64;
+  if (typeof b64 !== 'string' || !b64 || b64.length > 4_500_000) return json({ checked: false, reason: 'no audio, or too long' }, 400);
+  const pcm = Buffer.from(b64, 'base64');
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0); header.writeUInt32LE(36 + pcm.length, 4); header.write('WAVE', 8); header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22); header.writeUInt32LE(16000, 24);
+  header.writeUInt32LE(32000, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34); header.write('data', 36);
+  header.writeUInt32LE(pcm.length, 40);
+
+  const form = new FormData();
+  form.append('model_id', 'scribe_v1');
+  form.append('tag_audio_events', 'false');
+  form.append('file', new Blob([Buffer.concat([header, pcm])], { type: 'audio/wav' }), 'take.wav');
+  const res = await fetch(`${ELEVENLABS_BASE}/v1/speech-to-text`, { method: 'POST', headers: { 'xi-api-key': apiKey }, body: form });
+  if (!res.ok) {
+    console.error('Scribe failed:', res.status, (await res.text().catch(() => '')).slice(0, 300));
+    return json({ checked: false, reason: `speech-to-text returned ${res.status}` });
+  }
+  const data: any = await res.json();
+  const language = String(data.language_code ?? '').toLowerCase();
+  const probability = typeof data.language_probability === 'number' ? data.language_probability : null;
+  const text = String(data.text ?? '');
+  const dutchWords: string[] = dutchWordsIn(text);
+  const heardDutch = ['nld', 'nl', 'dut', 'nld-nl'].includes(language) || dutchWords.length >= 2;
+  return json({ checked: true, language, probability, dutchWords, heardDutch, text });
+}
+
 export default async (req: Request): Promise<Response> => {
   const route = new URL(req.url).pathname.replace(/\/+$/, '');
 
@@ -433,6 +480,15 @@ export default async (req: Request): Promise<Response> => {
     return json({ error: 'Could not reach saved work.' }, 502);
   }
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+
+  if (route === '/api/voice-check') {
+    try {
+      return await voiceCheck(await req.json());
+    } catch (error) {
+      console.error('Voice check failed:', error);
+      return json({ checked: false, reason: 'check failed' });
+    }
+  }
 
   const handlers: Record<string, (ai: GoogleGenAI, body: any) => Promise<Response>> = {
     '/api/transcribe': transcribe,

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Wand2, Loader, Download, Film, AlertCircle, CheckCircle2, Volume2 } from 'lucide-react';
 import { VoiceOption } from '../types';
 import { LessonData, buildPlayerHtml, checkScript } from '../services/lessonPlayer';
-import { generateVisuals, narrateLines, VisualsLevel } from '../services/visualsService';
+import { generateVisuals, narrateLines, VisualsLevel, NarrationReport } from '../services/visualsService';
 import { buildHyperframesZip, buildHyperframesPreviewHtml } from '../services/hyperframesExport';
 import { isAfrikaansText } from '../utils/language';
 
@@ -10,6 +10,7 @@ import { isAfrikaansText } from '../utils/language';
 export interface VisualsEntry {
   data: LessonData;
   audio: Record<string, string>;
+  report?: NarrationReport;
   slideText: string;
   voiceId: string;
   lang: 'en' | 'af';
@@ -38,7 +39,7 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
   const [level, setLevel] = useState<VisualsLevel>('univ');
   const [currency, setCurrency] = useState('R');
   const [phase, setPhase] = useState<'idle' | 'visuals' | 'voice'>('idle');
-  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [progress, setProgress] = useState({ done: 0, total: 0, phase: 'take' });
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -62,8 +63,8 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
         data = await generateVisuals({ text: slideText, lang: textLang, level, currency }, ctl.signal);
       }
       setPhase('voice');
-      const audio = await narrateLines(data, voice, textLang === 'af', (done, total) => setProgress({ done, total }), ctl.signal);
-      onEntry({ data, audio, slideText, voiceId: voice.id, lang: textLang });
+      const { audio, report } = await narrateLines(data, voice, textLang === 'af', (done, total, phase) => setProgress({ done, total, phase }), ctl.signal);
+      onEntry({ data, audio, report, slideText, voiceId: voice.id, lang: textLang });
     } catch (e: any) {
       if (e?.name === 'AbortError') setError('Stopped.');
       else if (e?.isQuotaExceeded) setError('The narrator voice has reached its quota. Try another voice, or wait and retry.');
@@ -185,7 +186,11 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
                 <Loader className="animate-spin" size={12} />
                 {phase === 'visuals'
                   ? (af ? 'Claude bou die beelde…' : 'Claude is building the visuals…')
-                  : (af ? `Neem sin ${progress.done} van ${progress.total} op…` : `Voicing line ${progress.done} of ${progress.total}…`)}
+                  : progress.phase === 'lines'
+                    ? (af ? `Neem sin ${progress.done} van ${progress.total} op…` : `Voicing line ${progress.done} of ${progress.total}…`)
+                    : progress.phase === 'split'
+                      ? (af ? 'Sny die opname in sinne…' : 'Cutting the take into lines…')
+                      : (af ? 'Neem die hele skyfie in een keer op en kontroleer die taal…' : 'Voicing the whole slide in one take and checking the language…')}
               </div>
             )}
             {error && (
@@ -197,6 +202,21 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
               <div className={`rounded-xl p-3 text-[11px] flex gap-2 border ${check.ok ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-amber-50 border-amber-100 text-amber-800'}`}>
                 {check.ok ? <CheckCircle2 size={13} className="flex-none mt-0.5" /> : <AlertCircle size={13} className="flex-none mt-0.5" />}
                 <span>{check.detail}</span>
+              </div>
+            )}
+            {entry?.report && (
+              <div className={`rounded-xl p-3 text-[11px] border space-y-1 ${entry.report.check?.heardDutch ? 'bg-amber-50 border-amber-100 text-amber-800' : 'bg-slate-50 border-slate-100 text-slate-600'}`}>
+                <div className="font-bold">
+                  {entry.report.mode === 'take' ? (af ? 'Een deurlopende opname' : 'One continuous take') : (af ? 'Sin vir sin opgeneem' : 'Voiced line by line')}
+                </div>
+                <div>
+                  {!entry.report.check || !entry.report.check.checked
+                    ? (af ? 'Taalkontrole: nie beskikbaar nie' : `Language check: not available${entry.report.check?.reason ? ` (${entry.report.check.reason})` : ''}`)
+                    : entry.report.check.heardDutch
+                      ? (af ? 'Taalkontrole: klink steeds Nederlands. Probeer \'n ander stem.' : `Language check: still sounds Dutch after ${entry.report.check.attempts} tries. Try another voice.`)
+                      : (af ? `Taalkontrole: Afrikaans${entry.report.check.attempts > 1 ? ` (na ${entry.report.check.attempts} pogings)` : ''}` : `Language check: ${entry.report.check.language || 'Afrikaans'}${entry.report.check.probability ? ` ${Math.round(entry.report.check.probability * 100)}%` : ''}${entry.report.check.attempts > 1 ? `, after ${entry.report.check.attempts} tries` : ''}`)}
+                </div>
+                {entry.report.note && <div className="opacity-80">{entry.report.note}</div>}
               </div>
             )}
             {stale && (
