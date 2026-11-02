@@ -934,7 +934,7 @@ const App: React.FC = () => {
       </header>
 
       {/* Main Studio View OR Transcription Panel */}
-      <main className="flex-1 min-h-0 overflow-hidden px-5 py-4 max-w-[1600px] mx-auto w-full">
+      <main className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden px-5 py-4 max-w-[1600px] mx-auto w-full">
         
         {activeTab === 'transcribe' ? (
           <TranscriptionPanel
@@ -948,10 +948,10 @@ const App: React.FC = () => {
             onSelectVoiceId={setSelectedVoiceId}
           />
         ) : (
-          <div className="h-full grid grid-cols-1 lg:grid-cols-12 gap-5 min-h-0">
+          <div className="lg:h-full grid grid-cols-1 lg:grid-cols-12 gap-5 lg:min-h-0">
             
             {/* Left: Slide Editor & Navigation */}
-            <div className="lg:col-span-7 flex flex-col min-h-0 relative">
+            <div className="lg:col-span-7 flex flex-col min-h-[460px] lg:min-h-0 relative">
               {currentStep === 1 && <StepPopup step={1} />}
               {currentStep === 2 && <StepPopup step={2} />}
 
@@ -1065,8 +1065,8 @@ const App: React.FC = () => {
             </div>
 
             {/* Right: Realistic Conversational Voice Studio & Generation */}
-            <div className="lg:col-span-5 flex flex-col min-h-0">
-              <div className="flex-1 flex flex-col min-h-0 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 overflow-y-auto custom-scrollbar">
+            <div className="lg:col-span-5 flex flex-col lg:min-h-0">
+              <div className="lg:flex-1 flex flex-col lg:min-h-0 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 lg:overflow-y-auto custom-scrollbar">
                 
                 <div className="flex-none flex items-center justify-between mb-3">
                   <div className="flex items-center space-x-3">
