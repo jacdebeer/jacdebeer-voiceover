@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send, Loader, Undo2, Check, X, MessageSquare, AlertCircle } from 'lucide-react';
+import { Send, Loader, Undo2, Check, X, MessageSquare, AlertCircle, ScrollText } from 'lucide-react';
 import { LessonData } from '../services/lessonPlayer';
+import { RulesModal } from './RulesModal';
+import { saveRule, fetchRules, getRules, onRulesChange } from '../services/rulesService';
 import { askChat, needsNewVoice, mmss, timeOfChange, ChatProposal, ChatTurn, LessonTimeline, LessonPos } from '../services/chatService';
 
 interface Props {
@@ -19,7 +21,8 @@ interface Props {
   onUndo: () => void;
 }
 
-interface Item { id: number; role: 'user' | 'assistant'; text: string; proposal?: ChatProposal | null; state?: 'pending' | 'applied' | 'discarded' | 'stale' }
+type Scope = 'file' | 'both' | 'rule';
+interface Item { id: number; role: 'user' | 'assistant'; text: string; proposal?: ChatProposal | null; state?: 'pending' | 'applied' | 'discarded' | 'stale'; done?: Scope }
 
 const SUGGESTIONS_EN = ['Shorten the explanation at the current time', 'Say "Bates" as "Baates" in the voice-over', 'Change the amount shown here to R45 000'];
 const SUGGESTIONS_AF = ['Maak die verduideliking by die huidige tyd korter', 'Sê "Bates" as "Baates" in die stemopname', 'Verander die bedrag wat hier wys na R45 000'];
@@ -29,6 +32,9 @@ export const LessonChat: React.FC<Props> = ({ af, lesson, lang, mode, busy, canU
   const [text, setText] = useState('');
   const [asking, setAsking] = useState(false);
   const [applyingId, setApplyingId] = useState<number | null>(null);
+  const [showRules, setShowRules] = useState(false);
+  const [ruleCount, setRuleCount] = useState(getRules().filter((r) => r.active).length);
+  useEffect(() => { void fetchRules(); return onRulesChange(() => setRuleCount(getRules().filter((r) => r.active).length)); }, []);
   const [error, setError] = useState<string | null>(null);
   const idRef = useRef(1);
   const abortRef = useRef<AbortController | null>(null);
@@ -67,13 +73,15 @@ export const LessonChat: React.FC<Props> = ({ af, lesson, lang, mode, busy, canU
     }
   };
 
-  const apply = async (item: Item) => {
+  /** scope: this file only, this file and every future lesson, or only a rule for the future */
+  const apply = async (item: Item, scope: Scope) => {
     if (!item.proposal) return;
     setApplyingId(item.id);
     setError(null);
     try {
-      await onApply(item.proposal);
-      setItems((cur) => cur.map((i) => (i.id === item.id ? { ...i, state: 'applied' } : i)));
+      if (scope !== 'rule') await onApply(item.proposal);
+      if (scope !== 'file' && item.proposal.rule) await saveRule(item.proposal.rule);
+      setItems((cur) => cur.map((i) => (i.id === item.id ? { ...i, state: 'applied', done: scope } : i)));
     } catch (e: any) {
       setError(e?.message || (af ? 'Kon nie die veranderinge toepas nie.' : 'Could not apply the changes.'));
     } finally {
@@ -86,8 +94,12 @@ export const LessonChat: React.FC<Props> = ({ af, lesson, lang, mode, busy, canU
 
   return (
     <div className="h-full flex flex-col bg-white" data-testid="lesson-chat">
+      {showRules && <RulesModal af={af} onClose={() => setShowRules(false)} />}
       <div className="flex-none flex items-center justify-between px-3 py-2 border-b border-slate-100">
         <div className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5"><MessageSquare size={13} /> {af ? 'Gesels met Claude' : 'Chat with Claude'}</div>
+        <button onClick={() => setShowRules(true)} className="text-[10px] font-bold text-slate-600 border border-slate-200 rounded-lg px-2 py-1 hover:bg-slate-50 flex items-center gap-1 ml-auto mr-1" title={af ? 'My reëls vir toekomstige lesse' : 'My rules for future lessons'} data-testid="open-rules">
+          <ScrollText size={11} /> {af ? 'Reëls' : 'Rules'} ({ruleCount})
+        </button>
         <button onClick={onUndo} disabled={!canUndo || disabled}
           className="text-[10px] font-bold text-slate-600 border border-slate-200 rounded-lg px-2 py-1 hover:bg-slate-50 disabled:opacity-40 flex items-center gap-1">
           <Undo2 size={11} /> {af ? 'Ontdoen' : 'Undo'}
@@ -110,7 +122,7 @@ export const LessonChat: React.FC<Props> = ({ af, lesson, lang, mode, busy, canU
           <div key={it.id} className={`anim-fade-up ${it.role === 'user' ? 'flex justify-end' : 'flex'}`}>
             <div className={`max-w-[92%] rounded-xl px-3 py-2 text-[11px] leading-snug whitespace-pre-wrap ${it.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
               {it.text}
-              {it.proposal && <ProposalCard af={af} timeline={timeline} item={it} onApply={() => apply(it)} onDiscard={() => setItems((cur) => cur.map((i) => (i.id === it.id ? { ...i, state: 'discarded' } : i)))} applying={applyingId === it.id} disabled={disabled} />}
+              {it.proposal && <ProposalCard af={af} timeline={timeline} item={it} onApply={(scope) => apply(it, scope)} onDiscard={() => setItems((cur) => cur.map((i) => (i.id === it.id ? { ...i, state: 'discarded' } : i)))} applying={applyingId === it.id} disabled={disabled} />}
             </div>
           </div>
         ))}
@@ -142,10 +154,11 @@ export const LessonChat: React.FC<Props> = ({ af, lesson, lang, mode, busy, canU
   );
 };
 
-const ProposalCard: React.FC<{ af: boolean; timeline: LessonTimeline | null; item: Item; onApply: () => void; onDiscard: () => void; applying: boolean; disabled: boolean }> = ({ af, timeline, item, onApply, onDiscard, applying, disabled }) => {
+const ProposalCard: React.FC<{ af: boolean; timeline: LessonTimeline | null; item: Item; onApply: (scope: Scope) => void; onDiscard: () => void; applying: boolean; disabled: boolean }> = ({ af, timeline, item, onApply, onDiscard, applying, disabled }) => {
   const p = item.proposal!;
   const c = p.changes;
   const voice = needsNewVoice(c);
+  const ruleOnly = !!p.rule && changesEmpty(c);
   const lines = c.spoken.slice(0, 6);
   return (
     <div className="mt-2 rounded-lg border border-indigo-200 bg-white text-slate-800 p-2.5 space-y-1.5" data-testid="proposal">
@@ -170,18 +183,49 @@ const ProposalCard: React.FC<{ af: boolean; timeline: LessonTimeline | null; ite
           ? (af ? 'Die hele skyfie word weer in een opname opgeneem (gebruik stemkrediete).' : 'The whole slide is voiced again in one take (uses voice credits).')
           : (af ? 'Net beelde: die bestaande stem bly, geen stemkrediete nodig nie.' : 'Visuals only: the existing voice is kept, no voice credits used.')}
       </div>
-      {item.state === 'pending' && (
+      {p.rule && (
+        <div className="text-[10px] rounded px-1.5 py-1 bg-indigo-50 text-indigo-800 leading-snug" data-testid="suggested-rule">
+          <b>{af ? 'As reël vir alle toekomstige lesse:' : 'As a rule for all future lessons:'}</b> {p.rule.kind === 'pronunciation' ? `${p.rule.word} → ${p.rule.say}` : p.rule.text}
+        </div>
+      )}
+      {item.state === 'pending' && !p.rule && (
         <div className="flex gap-2 pt-0.5">
-          <button onClick={onApply} disabled={disabled}
+          <button onClick={() => onApply('file')} disabled={disabled}
             className="flex-1 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[11px] font-bold flex items-center justify-center gap-1">
             {applying ? <Loader className="animate-spin" size={11} /> : <Check size={11} />} {voice ? (af ? 'Bevestig en genereer weer' : 'Confirm and regenerate') : (af ? 'Bevestig en pas toe' : 'Confirm and apply')}
           </button>
           <button onClick={onDiscard} disabled={disabled} className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-[11px] font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-1"><X size={11} /> {af ? 'Verwerp' : 'Discard'}</button>
         </div>
       )}
-      {item.state === 'applied' && <div className="text-[10px] font-bold text-emerald-700">{af ? 'Toegepas.' : 'Applied.'}</div>}
+      {item.state === 'pending' && p.rule && (
+        <div className="space-y-1.5 pt-0.5" data-testid="scope-buttons">
+          {!ruleOnly && (
+            <button onClick={() => onApply('file')} disabled={disabled} data-testid="scope-file"
+              className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[11px] font-bold flex items-center justify-center gap-1">
+              {applying ? <Loader className="animate-spin" size={11} /> : <Check size={11} />} {af ? 'Net hierdie lêer' : 'This file only'}{voice ? (af ? ' (stem weer)' : ' (voice again)') : ''}
+            </button>
+          )}
+          {!ruleOnly && (
+            <button onClick={() => onApply('both')} disabled={disabled} data-testid="scope-both"
+              className="w-full py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-[11px] font-bold flex items-center justify-center gap-1">
+              <ScrollText size={11} /> {af ? 'Hierdie lêer én alle toekomstige lesse' : 'This file and all future lessons'}
+            </button>
+          )}
+          <div className="flex gap-2">
+            <button onClick={() => onApply('rule')} disabled={disabled} data-testid="scope-rule"
+              className="flex-1 py-1.5 rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 text-[11px] font-bold">
+              {ruleOnly ? (af ? 'Stoor as reël vir alle toekomstige lesse' : 'Save as a rule for all future lessons') : (af ? 'Net as reël (lêer bly)' : 'Only as a rule (file stays)')}
+            </button>
+            <button onClick={onDiscard} disabled={disabled} className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-[11px] font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-1"><X size={11} /> {af ? 'Verwerp' : 'Discard'}</button>
+          </div>
+        </div>
+      )}
+      {item.state === 'applied' && <div className="text-[10px] font-bold text-emerald-700" data-testid="applied-note">{item.done === 'rule' ? (af ? 'Gestoor as reël. Hierdie lêer is nie verander nie.' : 'Saved as a rule. This file was not changed.') : item.done === 'both' ? (af ? 'Toegepas en as reël gestoor.' : 'Applied and saved as a rule.') : (af ? 'Toegepas.' : 'Applied.')}</div>}
       {item.state === 'discarded' && <div className="text-[10px] text-slate-400">{af ? 'Verwerp.' : 'Discarded.'}</div>}
       {item.state === 'stale' && <div className="text-[10px] text-slate-400">{af ? 'Verouderd: die les het intussen verander. Vra weer.' : 'Out of date: the lesson changed since. Ask again.'}</div>}
     </div>
   );
 };
+
+const changesEmpty = (c: { spoken: unknown[]; blocksChanged: number; beatsAdded: number; beatsRemoved: number; pronunciationsChanged: boolean }) =>
+  !c.spoken.length && !c.blocksChanged && !c.beatsAdded && !c.beatsRemoved && !c.pronunciationsChanged;

@@ -147,3 +147,10 @@ Once a slide has visuals, the Slide visuals window shows a chat panel. The user 
 
 ### Account coverage
 - Rule K in the visuals prompt: every account the text names must be drawn at least once as a T-account (normal side, a typical entry, figures consistent with the rest of the lesson and the shared example), also on introduction, overview, comparison and summary slides, where the model used to show only cards, flows and formulas. Up to 3 accounts may share one T-account block on an overview or summary beat. This is an instruction to the model; the app does not check that it was followed.
+
+### Rules for all future lessons (from the chat)
+- When a chat change looks like a standing preference (a convention, terminology, a wording or layout rule, how a word is pronounced, or the user says "always" / "from now on"), Claude adds a **rule** to its proposal. The confirmation card then offers three choices: **This file only**, **This file and all future lessons**, or **Only as a rule (the file stays)**. A one-off content change (this figure, this title) has no rule and keeps the single confirm button. If the user only states a rule and nothing in the file needs to change, the card has just "Save as a rule for all future lessons".
+- Two kinds of rule, saved per user in Netlify Blobs (`user-rules`, `netlify/lib/rules.mts`, `/api/rules`):
+  - **instruction**: one sentence that is added to the lesson-writing prompt for every new lesson and to the chat's own prompt (so it does not contradict it);
+  - **pronunciation**: a word and how it is said; sent with every voicing (`narrateLines`), with the lesson's own pronunciations winning.
+- "Rules (n)" in the chat header and in the app header opens the list: switch a rule off or delete it. Rules apply to lessons made and voiced from then on; they do not change lessons that already exist. At most 60 rules; the same rule twice is one rule; an unusable rule from the model is dropped and the file change stays.

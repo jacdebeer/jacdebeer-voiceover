@@ -3,7 +3,7 @@ import {
   Mic, BookOpen, Sparkles, AlertCircle, ArrowRightLeft, ChevronLeft, ChevronRight, 
   ScanSearch, FileUp, Gauge, Volume2, Loader, Square, Layers, Wand2, Trash2, 
   X, HelpCircle, Library, CheckCircle2, Plus, Scissors, Combine, ArrowBigRightDash, 
-  Radio, FileText, AudioWaveform, MessageSquare, Languages, Undo2, Presentation
+  Radio, FileText, AudioWaveform, MessageSquare, Languages, Undo2, Presentation, ScrollText
 } from 'lucide-react';
 import { VoiceName, VOICE_OPTIONS, AudioState, CoursePage, VoiceOption } from './types';
 import { generateSpeechForVoice, generateCheckedSpeech, translateText, enhanceConversationalScript, fetchLibraryVoices, fetchElevenLabsVoices } from './services/geminiService';
@@ -18,6 +18,8 @@ import { VisualsModal, VisualsEntry } from './components/VisualsModal';
 import { LibraryModal } from './components/LibraryModal';
 import { BalanceModal } from './components/BalanceModal';
 import { AllSlidesModal } from './components/AllSlidesModal';
+import { RulesModal } from './components/RulesModal';
+import { fetchRules } from './services/rulesService';
 import { slideSize, SLIDE_LIMITS } from './utils/slideBalance';
 import { BRAND } from './brand/brand';
 import { isAfrikaansText } from './utils/language';
@@ -183,6 +185,9 @@ const App: React.FC = () => {
   const [showVisuals, setShowVisuals] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showBalance, setShowBalance] = useState(false);
+  const [showRules, setShowRules] = useState(false);
+  // the user's rules for future lessons: pronunciation rules are used by every voicing
+  useEffect(() => { void fetchRules(); }, []);
   const [showAllVisuals, setShowAllVisuals] = useState(false);
   // the last whole-lesson change (translate all, balance), so it can be undone
   const [structUndo, setStructUndo] = useState<{ label: string; pages: CoursePage[]; pageIndex: number; language: Language; visuals: Record<number, VisualsEntry> } | null>(null);
@@ -977,6 +982,15 @@ const App: React.FC = () => {
             <Library size={14} />
             <span>{language === 'af' ? 'Biblioteek' : 'Library'}</span>
           </button>
+          <button
+            onClick={() => setShowRules(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200"
+            title={language === 'af' ? 'My reëls vir toekomstige lesse' : 'My rules for future lessons'}
+            data-testid="header-rules"
+          >
+            <ScrollText size={14} />
+            <span>{language === 'af' ? 'Reëls' : 'Rules'}</span>
+          </button>
           <button 
             onClick={() => setCurrentStep(1)} 
             className="text-slate-400 hover:text-indigo-600 transition-colors p-1.5 rounded-lg hover:bg-slate-100" 
@@ -1335,6 +1349,8 @@ const App: React.FC = () => {
         onInsertToSlide={handleInsertLiveTextToSlide}
       />
       )}
+
+      {showRules && <RulesModal af={language === 'af'} onClose={() => setShowRules(false)} />}
 
       {showLibrary && <LibraryModal language={language} onClose={() => setShowLibrary(false)} />}
 
