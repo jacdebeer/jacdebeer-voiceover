@@ -1,12 +1,12 @@
 var DATA = JSON.parse(document.getElementById('lessonData').textContent);
 
 var DEF = {
-  en:{qty:'Qty',to:'To',date:'Date',doc:'Doc no',details:'Details',fol:'Fol',debit:'Debit',credit:'Credit',balance:'Balance',
+  en:{thanks:'Thank you!',again:'Play again',qty:'Qty',to:'To',date:'Date',doc:'Doc no',details:'Details',fol:'Fol',debit:'Debit',credit:'Credit',balance:'Balance',
       total:'Total',totals:'Totals',balCd:'Balance c/d',balBd:'Balance b/d',play:'Play',pause:'Pause',
       showAll:'Show all',step:'Step',of:'of',correct:'Correct',wrong:'Not quite',continue:'Continue',
       assets:'Assets',oe:'Owner\u2019s equity',liab:'Liabilities',accDr:'Account debited',accCr:'Account credited',
       balanced:'Debits = Credits',unbalanced:'Debits do not equal credits',excerpt:'Extract only \u2014 totals are not expected to balance',footer:'Generated with Accounting Explainer Studio'},
-  af:{qty:'Hoev.',to:'Aan',date:'Datum',doc:'Dok. nr.',details:'Besonderhede',fol:'Fol',debit:'Debiet',credit:'Krediet',balance:'Saldo',
+  af:{thanks:'Dankie!',again:'Speel weer',qty:'Hoev.',to:'Aan',date:'Datum',doc:'Dok. nr.',details:'Besonderhede',fol:'Fol',debit:'Debiet',credit:'Krediet',balance:'Saldo',
       total:'Totaal',totals:'Totale',balCd:'Saldo a/a',balBd:'Saldo b/o',play:'Speel',pause:'Wag',
       showAll:'Wys alles',step:'Stap',of:'van',correct:'Korrek',wrong:'Nie heeltemal nie',continue:'Gaan voort',
       assets:'Bates',oe:'Eienaarsbelang',liab:'Laste',accDr:'Rekening gedebiteer',accCr:'Rekening gekrediteer',
@@ -466,13 +466,102 @@ function countUp(root){
   });
 }
 
+/* ---------- engaging motion: a pointing hand on what has just appeared, sparkles when a beat is complete ---------- */
+var POINTERS = ['👆', '👉', '☝️', '👇'];
+var pointN = 0;
+function pointAt(r){
+  if(REDUCED || !r || r.tagName === 'TR') return;
+  var old = r.querySelector(':scope > .pointer'); if(old) old.remove();
+  var h = document.createElement('span');
+  h.className = 'pointer p' + (pointN % 2);
+  h.textContent = POINTERS[pointN % 2 === 0 ? 0 : 2];
+  pointN++;
+  r.appendChild(h);
+  setTimeout(function(){ if(h.parentNode) h.parentNode.removeChild(h); }, 2600);
+}
+function celebrate(){
+  if(REDUCED) return;
+  var st = document.getElementById('pStage');
+  if(!st || !st.querySelector('.chk.ok')) return;
+  var rect = st.getBoundingClientRect();
+  ['✨','⭐','✨','🎉','✨','⭐'].forEach(function(e, i){
+    var s = document.createElement('span');
+    s.className = 'spark';
+    s.textContent = e;
+    s.style.left = (18 + i * 13) + '%';
+    s.style.animationDelay = (i * 0.07) + 's';
+    st.appendChild(s);
+    setTimeout(function(){ if(s.parentNode) s.parentNode.removeChild(s); }, 1900);
+  });
+}
+
+/* ---------- intro and outro (the branded page): the logo and title arrive, the lesson starts; at the end, thanks and a replay ---------- */
+var INTRO_S = 3, OUTRO_S = 4;
+var BRAND = false;
+try { BRAND = DATA.brand !== false && !!document.getElementById('splash'); } catch(e){}
+var introOn = false, splashTimer = null;
+function splashEl(){ return document.getElementById('splash'); }
+function showSplash(mode){
+  var sp = splashEl(); if(!sp) return;
+  clearTimeout(splashTimer);
+  sp.classList.remove('intro', 'outro', 'go');
+  sp.classList.add(mode);
+  document.getElementById('spTitle').textContent = DATA.title || '';
+  document.getElementById('spMsg').textContent = L.thanks;
+  var go = document.getElementById('spGo');
+  go.textContent = mode === 'intro' ? ('▶ ' + L.play) : ('↻ ' + L.again);
+  go.onclick = function(){ if(mode === 'intro') startFromSplash(); else replay(); };
+  /* restart the CSS animations of the card */
+  sp.hidden = true; void sp.offsetWidth; sp.hidden = false;
+  introOn = (mode === 'intro');
+  if(mode === 'outro') confetti();
+}
+function hideSplash(){
+  var sp = splashEl(); if(!sp || sp.hidden) return;
+  clearTimeout(splashTimer);
+  sp.hidden = true;
+  introOn = false;
+}
+function startFromSplash(){
+  var sp = splashEl(); if(!sp) { play(true); return; }
+  sp.classList.add('go');
+  introOn = false;
+  clockPaint();
+  splashTimer = setTimeout(function(){ hideSplash(); play(true); }, REDUCED ? 300 : 2300);
+}
+function replay(){
+  hideSplash();
+  bi = 0; si = 0; spoke = {};
+  renderBeat();
+  play(true);
+}
+function outroSoon(){
+  if(!BRAND) return;
+  splashTimer = setTimeout(function(){ showSplash('outro'); }, 1400);
+}
+function confetti(){
+  var c = document.getElementById('spConf'); if(!c || REDUCED) return;
+  c.innerHTML = '';
+  var set = ['🎉','✨','⭐','🎓','💡','✨'];
+  for(var i = 0; i < 22; i++){
+    var s = document.createElement('span');
+    s.textContent = set[i % set.length];
+    s.style.left = (Math.random() * 96) + '%';
+    s.style.animationDuration = (2.4 + Math.random() * 2.2) + 's';
+    s.style.animationDelay = (Math.random() * 1.2) + 's';
+    s.style.fontSize = (1.4 + Math.random() * 1.6) + 'rem';
+    c.appendChild(s);
+  }
+}
+
 function stepFwd(){
   if(si < steps.length){
     var g = groups[gIndex()] || {from:si, to:si + 1};
     steps.forEach(function(x){ x.classList.remove('now'); });
     var shown = steps.slice(g.from, g.to);
     si = g.to;
-    shown.forEach(function(r){ r.classList.remove('hide'); r.classList.add('pop', 'now'); countUp(r); });
+    shown.forEach(function(r){ r.classList.remove('hide'); r.classList.add('pop', 'now'); countUp(r); pointAt(r); });
+    if(si >= steps.length) celebrate();
     setTimeout(function(){ shown.forEach(function(r){ r.classList.remove('pop'); }); }, 900);
     paint();
     return true;
@@ -564,7 +653,7 @@ function tick(){
   if(!playing) return;
   var lines = groupLines(gIndex());
   var atEnd = (si >= steps.length);
-  if(!stepFwd()){ play(false); return; }
+  if(!stepFwd()){ play(false); outroSoon(); return; }
   if(atEnd){                       /* we moved to a new beat: read its caption first */
     var b = beats[bi] || {};
     if(voiceOn && sayBeatIntro(b, function(){ if(playing) tick(); })) return;
@@ -576,6 +665,7 @@ function tick(){
 }
 
 function play(on){
+  if(on && introOn){ startFromSplash(); return; }
   playing = on;
   document.getElementById('bPlay').textContent = on ? ('\u23F8 ' + L.pause) : ('\u25B6 ' + L.play);
   clearTimeout(timer);
@@ -613,15 +703,41 @@ function quizEl(q){
   return box;
 }
 
+var openGroup = null;
+function groupsOf(){
+  var out = [];
+  beats.forEach(function(b, i){ if(b.group){ var g = out.filter(function(x){ return x.name === b.group; })[0]; if(!g){ g = {name:b.group, idx:[]}; out.push(g); } g.idx.push(i); } });
+  return out;
+}
+/* a slim navigator: the slides of a multi-slide lesson are tabs, and only the sections of the open slide are listed, in one row */
 function navPaint(){
   var nav = document.getElementById('pNav');
   nav.innerHTML = '';
-  beats.forEach(function(b, i){
-    if(b.group && (i === 0 || beats[i-1].group !== b.group)) nav.appendChild(el('div','grp', esc(b.group)));
-    var p = el('button','pill' + (i === bi ? ' on' : (i < bi ? ' done' : '')), (i+1) + '. ' + esc(b.title||''));
-    p.onclick = function(){ play(false); hush(); bi = i; renderBeat(); if(voiceOn) say(beats[i].caption || ''); };
-    nav.appendChild(p);
+  var groups = groupsOf();
+  var list = beats.map(function(b, i){ return i; });
+  if(groups.length > 1){
+    var cur = beats[bi] && beats[bi].group;
+    if(openGroup !== cur) openGroup = cur;
+    var row1 = el('div', 'navrow gtabs');
+    groups.forEach(function(g){
+      var c = el('button', 'gchip' + (g.name === openGroup ? ' on' : ''), esc(g.name) + ' <i>' + g.idx.length + '</i>');
+      c.title = g.name;
+      c.onclick = function(){ hideSplash(); play(false); hush(); openGroup = g.name; bi = g.idx[0]; renderBeat(); if(voiceOn) say(beats[bi].caption || ''); };
+      row1.appendChild(c);
+    });
+    nav.appendChild(row1);
+    list = groups.filter(function(g){ return g.name === openGroup; })[0].idx;
+  }
+  var row = el('div', 'navrow pills');
+  list.forEach(function(i, k){
+    var b = beats[i];
+    var p = el('button', 'pill' + (i === bi ? ' on' : (i < bi ? ' done' : '')), (k + 1) + '. ' + esc(b.title || ''));
+    p.title = b.title || '';
+    p.onclick = function(){ hideSplash(); play(false); hush(); bi = i; renderBeat(); if(voiceOn) say(beats[i].caption || ''); };
+    row.appendChild(p);
   });
+  nav.appendChild(row);
+  var on = row.querySelector('.pill.on'); if(on && on.scrollIntoView && !REDUCED) { try { row.scrollLeft = Math.max(0, on.offsetLeft - 60); } catch(e){} }
 }
 
 document.getElementById('pTitle').innerHTML = ico(DATA.icon, 'big') + esc(DATA.title || '');
@@ -629,8 +745,8 @@ document.getElementById('pSub').textContent = DATA.subtitle || '';
 var sc = DATA.scenario || {};
 document.getElementById('pMeta').textContent = [sc.entity, sc.period, sc.vat].filter(Boolean).join(' \u00B7 ');
 document.getElementById('pFoot').textContent = L.footer;
-document.getElementById('bPrev').onclick = function(){ play(false); hush(); stepBack(); };
-document.getElementById('bNext').onclick = function(){ var ls = groupLines(gIndex()); play(false); hush(); if(stepFwd() && voiceOn){ if(ls.length) sayAll(ls, function(){}); else say((beats[bi]||{}).caption || ''); } };
+document.getElementById('bPrev').onclick = function(){ hideSplash(); play(false); hush(); stepBack(); };
+document.getElementById('bNext').onclick = function(){ hideSplash(); var ls = groupLines(gIndex()); play(false); hush(); if(stepFwd() && voiceOn){ if(ls.length) sayAll(ls, function(){}); else say((beats[bi]||{}).caption || ''); } };
 document.getElementById('bPlay').onclick = function(){ play(!playing); };
 document.getElementById('bAll').textContent = L.showAll;
 document.getElementById('bAll').onclick = function(){ showAll = !showAll; si = showAll ? steps.length : 0; paint(); };
@@ -684,8 +800,8 @@ document.getElementById('bPrint').onclick = function(){ window.print(); };
   renderBeat = function(){ _rb.apply(null, arguments); if(pane.style.display !== 'none') fill(); };
 })();
 document.addEventListener('keydown', function(e){
-  if(e.key === 'ArrowRight'){ play(false); stepFwd(); }
-  if(e.key === 'ArrowLeft'){ play(false); stepBack(); }
+  if(e.key === 'ArrowRight'){ hideSplash(); play(false); stepFwd(); }
+  if(e.key === 'ArrowLeft'){ hideSplash(); play(false); stepBack(); }
   if(e.key === ' '){ e.preventDefault(); play(!playing); }
 });
 play(false);
@@ -712,7 +828,7 @@ function wavSeconds(uri){
   return rate > 0 && bytes > 0 ? bytes / rate : estDur('x x x');
 }
 function computeSchedule(){
-  var t = 0, out = {total:0, beats:[]};
+  var t = BRAND ? INTRO_S : 0, out = {total:0, beats:[]};   /* the intro takes the first seconds */
   beats.forEach(function(b, i){
     var lay = LAYOUT[i] || {n:0, groups:[]}, start = t, items = [], reveals = [];
     var intro = [];
@@ -728,7 +844,7 @@ function computeSchedule(){
     });
     out.beats.push({start:start, end:t, reveals:reveals, items:items});
   });
-  out.total = t;
+  out.total = t + (BRAND ? OUTRO_S : 0);
   CLOCK = out;
   clockPaint();
   postHost({lessonTimeline: lightClock()});
@@ -743,7 +859,7 @@ function lightClock(){
 }
 function posTime(){
   var c = CLOCK && CLOCK.beats[bi];
-  if(!c) return 0;
+  if(!c || introOn) return 0;
   var g = gIndex();
   return g > 0 ? c.reveals[g - 1] : c.start;
 }
@@ -785,3 +901,14 @@ window.addEventListener('message', function(e){
   computeSchedule();
 })();
 renderBeat();
+
+(function(){
+  var f = document.getElementById('bFull');
+  if(!f) return;
+  f.onclick = function(){
+    var d = document, root = d.documentElement;
+    try { if(!d.fullscreenElement && root.requestFullscreen) root.requestFullscreen(); else if(d.exitFullscreen) d.exitFullscreen(); } catch(e){}
+  };
+})();
+/* the branded page opens on the intro */
+if(BRAND) showSplash('intro');

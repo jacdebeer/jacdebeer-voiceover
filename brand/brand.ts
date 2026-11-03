@@ -56,17 +56,49 @@ body{background:#EAF2F5}
 .cap{background:var(--ink);border-bottom:3px solid var(--brand-teal)}
 .bar i{background:var(--brand-teal)}
 .brandbar{max-width:1080px;margin:0 auto 10px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.brandbar img{height:92px;width:auto;display:block}
+.brandbar img{height:56px;width:auto;display:block}
 .brandbar .tag,.brandfoot .tag{font-family:${LABEL_FONT};font-weight:200;letter-spacing:.075em;color:var(--ink);font-size:.95rem;white-space:nowrap}
 .brandfoot{max-width:1080px;margin:16px auto 0;display:flex;align-items:center;justify-content:center;gap:12px;opacity:.9}
 .brandfoot img{height:36px;width:auto}
 .foot{display:none}
 .grp{flex-basis:100%;text-align:center;font-family:${LABEL_FONT};font-weight:300;letter-spacing:.075em;font-size:.82rem;color:var(--accent);margin-top:6px}
+/* intro and outro: the logo arrives, the lesson title, then the lesson starts; at the end a thank-you and a replay button */
+.splash{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 38%,#FFFFFF 0%,#E3F2F6 55%,#CFE6EC 100%);transition:opacity .6s ease,visibility .6s}
+.splash[hidden]{display:flex!important;opacity:0;visibility:hidden;pointer-events:none}
+.splash .spCard{position:relative;z-index:2;text-align:center;padding:24px;max-width:760px}
+.splash .spConfetti{position:absolute;inset:0;z-index:1;overflow:hidden;pointer-events:none}
+.splash .spLogo{height:min(46vh,340px);width:auto;display:block;margin:0 auto;opacity:0;transform:scale(.7) translateY(30px)}
+.splash h1{font-family:${DISPLAY_FONT};font-weight:400;font-size:clamp(1.5rem,4.5vw,2.6rem);color:var(--ink);margin-top:14px;opacity:0;transform:translateY(16px)}
+.splash .spTag{font-family:${LABEL_FONT};font-weight:200;letter-spacing:.075em;font-size:clamp(1rem,2.4vw,1.5rem);color:var(--accent);margin-top:6px;opacity:0}
+.splash .spMsg{font-family:${DISPLAY_FONT};font-size:clamp(1.8rem,5vw,3.2rem);color:var(--ink);opacity:0;transform:scale(.8)}
+.splash .spBtn{margin-top:20px;font-weight:700;font-size:1rem;font-family:inherit;padding:12px 28px;border-radius:999px;border:0;background:var(--ink);color:#fff;cursor:pointer;box-shadow:0 8px 22px rgba(19,55,86,.28);opacity:0;transform:translateY(10px)}
+.splash .spBtn:hover{background:var(--accent)}
+.splash .spGlow{position:absolute;width:60vmin;height:60vmin;border-radius:50%;border:3px solid var(--brand-teal);opacity:0;top:50%;left:50%;margin:-30vmin 0 0 -30vmin}
+.splash:not([hidden]).go .spGlow,.splash:not([hidden]) .spGlow{animation:spRing 2.6s ease-out infinite}
+.splash:not([hidden]) .spLogo{animation:spLogoIn .9s cubic-bezier(.2,1.2,.3,1) .1s forwards}
+.splash:not([hidden]) h1{animation:spUp .7s ease .7s forwards}
+.splash:not([hidden]) .spTag{animation:spFade .8s ease 1.1s forwards}
+.splash:not([hidden]) .spMsg{animation:spPop .8s cubic-bezier(.2,1.3,.3,1) .1s forwards}
+.splash:not([hidden]) .spBtn{animation:spUp .6s ease 1.3s forwards}
+.splash.outro .spLogo{height:min(30vh,230px);animation-delay:.6s}
+.splash.outro h1{display:none}
+.splash.intro .spMsg{display:none}
+.splash.go .spBtn{display:none}
+@keyframes spLogoIn{from{opacity:0;transform:scale(.7) translateY(30px)}to{opacity:1;transform:none}}
+@keyframes spUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes spFade{to{opacity:1}}
+@keyframes spPop{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:none}}
+@keyframes spRing{0%{opacity:.7;transform:scale(.35)}100%{opacity:0;transform:scale(1.25)}}
+.splash .spConfetti span{position:absolute;top:-8vh;font-size:2rem;animation:spFall linear forwards}
+@keyframes spFall{to{transform:translateY(115vh) rotate(360deg)}}
 @media(max-width:560px){.brandbar .tag{display:none}}
+@media print{.splash{display:none!important}}
 @media print{.brandbar,.brandfoot{display:flex}}
 `;
 }
 
 export const brandBarHtml = () =>
   `<div class="brandbar"><img src="${BRAND.logoFull}" alt="${BRAND.name}"><span class="tag">${BRAND.tagline}</span></div>`;
+export const brandSplashHtml = () =>
+  `<div id="splash" class="splash intro" hidden><div class="spGlow"></div><div class="spCard"><img class="spLogo" src="${BRAND.logoFull}" alt="${BRAND.name}"><h1 id="spTitle"></h1><div class="spMsg" id="spMsg"></div><div class="spTag">${BRAND.tagline}</div><button id="spGo" class="spBtn" type="button"></button></div><div class="spConfetti" id="spConf"></div></div>`;
 export const brandFootHtml = () => `<div class="brandfoot"><img src="${BRAND.logoMark}" alt=""><span class="tag">${BRAND.name} &nbsp;|&nbsp; ${BRAND.tagline}</span></div>`;
