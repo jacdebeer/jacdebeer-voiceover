@@ -1,7 +1,7 @@
 import playerCss from '../lesson-player/player.css?raw';
 import playerBody from '../lesson-player/player-body.html?raw';
 import playerJs from '../lesson-player/player.js?raw';
-import { brandFontCss, brandPlayerCss, brandBarHtml, brandFootHtml } from '../brand/brand';
+import { brandFontCss, brandPlayerCss, brandBarHtml, brandFootHtml, brandSplashHtml } from '../brand/brand';
 // @ts-ignore - plain JS module shared with the server
 import { stripIllustrationNotes, tidyApostrophes } from '../netlify/lib/lessonRepair.mjs';
 
@@ -74,7 +74,7 @@ export function buildPlayerHtml(data: LessonData, audio: Record<string, string>)
   return (
     `<!DOCTYPE html><html lang="${data.lang === 'af' ? 'af' : 'en'}"><head><meta charset="UTF-8">` +
     `<meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${title}</title>` +
-    `<style>${playerCss}${brand ? brandFontCss() + brandPlayerCss() : ''}</style></head><body>${brand ? brandBarHtml() : ''}${playerBody}${brand ? brandFootHtml() : ''}` +
+    `<style>${playerCss}${brand ? brandFontCss() + brandPlayerCss() : ''}</style></head><body>${brand ? brandBarHtml() : ''}${playerBody}${brand ? brandFootHtml() + brandSplashHtml() : ''}` +
     `<script id="narrationAudio" type="application/json">${safe(audio)}</script>` +
     `<script id="lessonData" type="application/json">${safe(lesson)}</script>` +
     `<script>${playerJs.replace(/<\/script/gi, '<\\/script')}</script></body></html>`

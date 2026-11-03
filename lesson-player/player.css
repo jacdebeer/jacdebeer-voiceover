@@ -8,23 +8,30 @@
 html{font-size:var(--fs)}
 body{font-family:var(--font);background:#EEF1F6;color:var(--ink);line-height:1.5;padding:18px}
 .wrap{max-width:1080px;margin:0 auto}
-.head{text-align:center;margin-bottom:14px}
-.head h1{font-size:1.45rem;letter-spacing:-.02em}
-.head p{color:var(--ink2);font-size:.86rem;margin-top:4px}
-.meta{font-size:.72rem;color:var(--ink2);margin-top:6px}
-.nav{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:14px 0}
-.pill{border:1px solid var(--line);background:#fff;color:var(--ink2);border-radius:999px;padding:6px 13px;font-size:.76rem;font-weight:600;cursor:pointer;font-family:inherit}
+.head{text-align:center;margin-bottom:6px;display:flex;flex-wrap:wrap;align-items:baseline;justify-content:center;gap:2px 14px}
+.head h1{font-size:1.3rem;letter-spacing:-.02em}
+.head p{color:var(--ink2);font-size:.8rem;margin-top:0}
+.meta{font-size:.7rem;color:var(--ink2);margin-top:0}
+/* slim navigator: slide tabs on one row, the sections of the open slide on the next */
+.nav{display:flex;flex-direction:column;gap:5px;margin:6px 0 8px}
+.navrow{display:flex;gap:6px;overflow-x:auto;white-space:nowrap;padding:2px 2px 4px;scrollbar-width:thin;justify-content:flex-start}
+.navrow.gtabs{justify-content:center}
+.gchip{border:1px solid var(--line);background:#fff;color:var(--ink2);border-radius:8px;padding:4px 12px;font-size:.76rem;font-weight:700;cursor:pointer;font-family:inherit;flex:none}
+.gchip i{font-style:normal;font-size:.68rem;opacity:.7;margin-left:4px}
+.gchip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.navrow.pills .pill{flex:none;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+.pill{border:1px solid var(--line);background:#fff;color:var(--ink2);border-radius:999px;padding:5px 12px;font-size:.76rem;font-weight:600;cursor:pointer;font-family:inherit}
 .pill:hover{background:#F3F6FA}
 .pill.on{background:var(--ink);border-color:var(--ink);color:#fff}
 .pill.done{border-color:#94A3B8;color:var(--ink)}
-.stage{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:22px;min-height:340px}
+.stage{position:relative;overflow:hidden;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:18px 20px;min-height:300px}
 .stage h2{font-size:1.05rem;margin-bottom:2px}
 .stage h2 .num{color:var(--accent);margin-right:8px}
 .stageNote{font-size:.8rem;color:var(--ink2);margin-bottom:16px}
-.block{margin:4px 0}
+.block{margin:2px 0}
 /* a wide table (a six-column journal, five T-accounts) scrolls sideways inside its block instead of being cut off;
    the padding keeps what pokes out of a box (card badges, shadows, the pop animation) from being clipped by that */
-.block{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:16px 8px 8px}
+.block{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:16px 8px 26px}
 .block:first-of-type{margin-top:0}
 .blockTitle{font-size:.82rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--ink2);margin-bottom:7px}
 table{border-collapse:collapse;width:100%;background:#fff;font-size:.8rem;table-layout:auto}
@@ -83,6 +90,50 @@ td.num.count{animation:numFlash 1s ease-out}
 .cap .w{display:inline-block;opacity:0;transform:translateY(4px);animation:wordIn .35s ease forwards}
 @keyframes wordIn{to{opacity:1;transform:none}}
 .bar i{transition:width .45s cubic-bezier(.2,.8,.2,1)}
+/* ---- more life: colour washes, big emoji, arrows, pointing hand, sparkles ---- */
+[data-reveal]:not(tr){position:relative}
+.card2.pop::after,.chg.pop::after,.flow .step.pop::after,.callout.pop::after,.doc.pop::after{content:'';position:absolute;inset:0;border-radius:inherit;background:currentColor;pointer-events:none;animation:wash 1.1s ease-out both}
+.ftile.pop .fbox::after{content:'';position:absolute;inset:0;border-radius:inherit;background:currentColor;pointer-events:none;animation:wash 1.1s ease-out both}
+.ftile .fbox{position:relative}
+@keyframes wash{0%{opacity:.38}100%{opacity:0}}
+/* larger emoji, bouncing in, then floating on the element that is being spoken */
+.stage .card2 b .ico{font-size:2.6em;margin-right:.2em;vertical-align:-.25em}
+.stage .chg .ctext b .ico,.stage .flow .step .sicon .ico{font-size:2.6em}
+.flow .step .sicon{display:block;margin-bottom:2px}
+.stage .ficon{font-size:3rem}
+.stage .callout .cicon .ico{font-size:2.8rem}
+.stage h2 .ico.big{font-size:2.6rem;vertical-align:-.25em}
+.pop .ico{animation:emojiBounce 1.1s cubic-bezier(.3,1.5,.5,1) both}
+@keyframes emojiBounce{0%{transform:scale(.2) rotate(-25deg);opacity:0}55%{transform:scale(1.35) rotate(8deg);opacity:1}100%{transform:none}}
+.card2.now .ico,.chg.now .ico,.flow .step.now .ico,.ftile.now .ico,.callout.now .ico{animation:emojiFloat 2.2s ease-in-out 1.1s infinite}
+@keyframes emojiFloat{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-5px) rotate(-6deg)}}
+.stage h2 .ico.big{animation:titleEmoji 1.2s cubic-bezier(.3,1.5,.5,1) both}
+@keyframes titleEmoji{0%{transform:scale(.2) rotate(-30deg);opacity:0}60%{transform:scale(1.3) rotate(10deg);opacity:1}100%{transform:none}}
+/* arrows that move */
+.flow .arw{font-size:1.7rem;line-height:1;background:linear-gradient(90deg,#2C7388,#87c0cd,#2C7388);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:arrowFlow 1.4s linear infinite}
+@keyframes arrowFlow{from{background-position:0 0}to{background-position:-200% 0}}
+.chg .arrow{font-size:2.7rem;filter:drop-shadow(0 3px 6px rgba(0,0,0,.18))}
+.chg.up.now .arrow{animation:arrowUpLoop 1.1s ease-in-out infinite}
+.chg.down.now .arrow{animation:arrowDownLoop 1.1s ease-in-out infinite}
+@keyframes arrowUpLoop{0%,100%{transform:translateY(5px)}50%{transform:translateY(-7px)}}
+@keyframes arrowDownLoop{0%,100%{transform:translateY(-5px)}50%{transform:translateY(7px)}}
+.ftile .fop{display:inline-block}
+.ftile.now .fop{animation:opSpin 1.6s ease-in-out infinite}
+@keyframes opSpin{0%,100%{transform:scale(1)}50%{transform:scale(1.35) rotate(10deg)}}
+/* debit side blue, credit side amber, as the row arrives */
+tr.pop td.num{animation:numFlash 1s ease-out}
+.tacc tr.pop > td:nth-child(4){animation:debitFlash 1.4s ease-out}
+.tacc tr.pop > td:nth-child(8){animation:creditFlash 1.4s ease-out}
+@keyframes debitFlash{0%{background:#BFD4FF;color:#1E3A8A;transform:scale(1.12)}100%{background:transparent;transform:none}}
+@keyframes creditFlash{0%{background:#FDE68A;color:#92400E;transform:scale(1.12)}100%{background:transparent;transform:none}}
+/* a hand that points at what has just appeared */
+.pointer,.card2 > span.pointer{position:absolute;right:14px;bottom:-26px;font-size:2.6rem!important;line-height:1!important;display:block;z-index:4;pointer-events:none;filter:drop-shadow(0 3px 4px rgba(0,0,0,.25));animation:pointerPop 2.6s ease both;font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif}
+.pointer.p1{right:auto;left:14px}
+@keyframes pointerPop{0%{opacity:0;transform:translateY(26px) scale(.4)}12%{opacity:1;transform:translateY(0) scale(1.2)}22%{transform:translateY(-8px) scale(1)}34%{transform:translateY(2px)}46%{transform:translateY(-8px)}58%{transform:translateY(2px)}70%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-10px)}}
+.spark{position:absolute;bottom:8px;font-size:2rem;z-index:6;pointer-events:none;animation:sparkUp 1.8s ease-out both;font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif}
+@keyframes sparkUp{0%{opacity:0;transform:translateY(0) scale(.4)}20%{opacity:1}100%{opacity:0;transform:translateY(-170px) rotate(40deg) scale(1.3)}}
+.stage.enter::before{content:'';position:absolute;left:0;top:0;height:4px;width:100%;background:linear-gradient(90deg,transparent,var(--brand-teal,#87c0cd),var(--accent),transparent);animation:sweep .9s ease-out both}
+@keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 .docNo{font-family:ui-monospace,Consolas,monospace;font-weight:700}
 .doc{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px;max-width:560px;box-shadow:0 1px 0 rgba(0,0,0,.05)}
@@ -116,7 +167,7 @@ table.t tr.tot td.num{border-bottom:3px double var(--ink)}
 .chk.ok{background:#ECFDF5;color:var(--ok);border:1px solid #A7F3D0}
 .chk.bad{background:#FEF2F2;color:var(--bad);border:1px solid #FECACA}
 .chk.info{background:#F1F4F9;color:var(--ink2);border:1px solid var(--line)}
-.cap{background:var(--ink);color:#fff;border-radius:10px;padding:12px 16px;margin-top:14px;font-size:.9rem;min-height:46px;display:flex;align-items:center;justify-content:center;text-align:center}
+.cap{background:var(--ink);color:#fff;border-radius:10px;padding:10px 16px;margin-top:10px;font-size:.9rem;min-height:46px;display:flex;align-items:center;justify-content:center;text-align:center}
 .ctrl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
 .ctrl button{font-family:inherit;font-weight:700;font-size:.8rem;padding:8px 13px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
 .ctrl button:hover{background:#F3F6FA}
