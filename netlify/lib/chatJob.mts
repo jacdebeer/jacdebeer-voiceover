@@ -7,7 +7,7 @@ import { afrikaansGlossaryPrompt } from './afrikaansTerms.mjs';
 // @ts-ignore - plain JS module
 import { applyPatch, describeChanges } from './lessonPatch.mjs';
 // @ts-ignore - plain JS module
-import { addDefaultIcons } from './lessonRepair.mjs';
+import { addDefaultIcons, normalizeBookkeeping } from './lessonRepair.mjs';
 import { callMessages } from './anthropic.mts';
 
 export const CHAT_STORE = 'chat-jobs';
@@ -161,6 +161,7 @@ export async function runChat(input: ChatInput, apiKey: string, fetchImpl: typeo
     try {
       const after = applyPatch(input.lesson, p.ops);
       addDefaultIcons(after);
+      normalizeBookkeeping(after); // an edit cannot bring folios, long dates or an invoice number in a CPJ Doc column back
       const changes = describeChanges(input.lesson, after);
       const nothing = !changes.spoken.length && !changes.blocksChanged && !changes.beatsAdded && !changes.beatsRemoved && !changes.pronunciationsChanged &&
         JSON.stringify(after) === JSON.stringify(input.lesson);

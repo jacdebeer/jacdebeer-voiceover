@@ -206,3 +206,75 @@ export function tidyApostrophes(data) {
   walk(data);
   return n;
 }
+
+// Bookkeeping conventions that apply to every lesson, whatever the model wrote:
+// - the folio (Fol) column is always left empty;
+// - a date in a journal, ledger, T-account or equation is only the day of the month ("31", not "31-Mar-23" or "31 Mei 2026");
+// - a payment by EFT has the EFT number (EFT118) as its source document in the Doc column, not the supplier's invoice number.
+const dayOnly = (v) => {
+  if (typeof v !== 'string') return v;
+  const t = v.trim();
+  if (/^\d{1,2}$/.test(t)) return t;
+  let m = t.match(/^(\d{4})-\d{1,2}-(\d{1,2})/);            // 2026-05-31
+  if (m) return String(Number(m[2]));
+  m = t.match(/^(\d{1,2})\s*[-\/.\s]\s*(?:[A-Za-z\u00C0-\u024F]{3,}|\d{1,2})\b/);   // 31-Mar-23, 31 Mei 2026, 31/03/2023
+  if (m) return String(Number(m[1]));
+  return v;
+};
+const EFT_NO = /\bEFT[\s\-#:]*(\d+)/i;
+
+export function normalizeBookkeeping(data) {
+  const out = { fol: 0, dates: 0, eft: 0 };
+  if (!data || !Array.isArray(data.beats)) return out;
+  const clearFol = (o) => { if (o && typeof o === 'object' && typeof o.fol === 'string' && o.fol !== '') { o.fol = ''; out.fol++; } };
+  const fixDate = (o, key = 'date') => { if (o && typeof o[key] === 'string') { const d = dayOnly(o[key]); if (d !== o[key]) { o[key] = d; out.dates++; } } };
+  const eftDoc = (row) => {
+    const m = String(row.details || '').match(EFT_NO) || String(row.docNo || '').match(EFT_NO);
+    if (m && String(row.docNo || '').toUpperCase() !== 'EFT' + m[1]) { row.docNo = 'EFT' + m[1]; out.eft++; }
+  };
+  for (const beat of data.beats) {
+    for (const blk of beat.blocks || []) {
+      if (!blk) continue;
+      switch (blk.type) {
+        case 'journal': {
+          const j = blk.journal || {};
+          const payments = /betaling|payment|kbj|cpj|kontantbetalings/i.test(`${j.name || ''} ${j.abbrev || ''}`);
+          for (const r of j.rows || []) {
+            clearFol(r);
+            fixDate(r);
+            if (payments || EFT_NO.test(String(r.details || ''))) eftDoc(r);
+          }
+          break;
+        }
+        case 'ledger_columnar': {
+          const a = blk.account || {};
+          fixDate(a, 'openingDate');
+          for (const r of a.rows || []) { clearFol(r); fixDate(r); if (EFT_NO.test(String(r.details || ''))) eftDoc(r); }
+          break;
+        }
+        case 't_accounts':
+          for (const a of blk.accounts || []) {
+            for (const e of [...(a.debit || []), ...(a.credit || [])]) { clearFol(e); fixDate(e); }
+            fixDate(a, 'balDate'); fixDate(a, 'balDateNext');
+          }
+          break;
+        case 'equation':
+          for (const r of blk.rows || []) fixDate(r);
+          break;
+        case 'trial_balance':
+          for (const a of blk.accounts || []) clearFol(a);
+          break;
+        case 'source_document': {
+          const d = blk.doc || {};
+          if (/\bEFT\b/i.test(String(d.docType || '')) && !/^EFT/i.test(String(d.docNo || ''))) {
+            const n = String(d.docNo || '').match(/\d+/);
+            if (n) { d.docNo = 'EFT' + n[0]; out.eft++; }
+          }
+          break;
+        }
+        default: break;
+      }
+    }
+  }
+  return out;
+}
