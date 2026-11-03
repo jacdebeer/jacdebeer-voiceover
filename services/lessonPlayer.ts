@@ -3,13 +3,14 @@ import playerBody from '../lesson-player/player-body.html?raw';
 import playerJs from '../lesson-player/player.js?raw';
 import { brandFontCss, brandPlayerCss, brandBarHtml, brandFootHtml, brandSplashHtml } from '../brand/brand';
 // @ts-ignore - plain JS module shared with the server
-import { stripIllustrationNotes, tidyApostrophes } from '../netlify/lib/lessonRepair.mjs';
+import { stripIllustrationNotes, tidyApostrophes, normalizeBookkeeping } from '../netlify/lib/lessonRepair.mjs';
 
-/** A copy of the lesson as it is shown: without the "figures are only an example" notes, apostrophes tidied. The lesson itself is untouched. */
+/** A copy of the lesson as it is shown: without the "figures are only an example" notes, apostrophes tidied, bookkeeping conventions applied (empty folios, day-only dates, EFT number as the document). The lesson itself is untouched. */
 export function forDisplay(data: LessonData): LessonData {
   const copy: LessonData = JSON.parse(JSON.stringify(data));
   stripIllustrationNotes(copy);
   tidyApostrophes(copy);
+  normalizeBookkeeping(copy); // empty folios, day-only dates, the EFT number as the document
   return copy;
 }
 

@@ -2,7 +2,7 @@
 // It has no user session. The job id is an unguessable UUID that api.mts created for a signed-in user.
 import { getStore } from '@netlify/blobs';
 // @ts-ignore - plain JS module
-import { repairSpokenLines, dedupeSelf, addDefaultIcons, stripIllustrationNotes, tidyApostrophes } from '../lib/lessonRepair.mjs';
+import { repairSpokenLines, dedupeSelf, addDefaultIcons, stripIllustrationNotes, tidyApostrophes, normalizeBookkeeping } from '../lib/lessonRepair.mjs';
 import { VISUALS_STORE, VISUALS_MAX_OUTPUT_TOKENS, buildSystem, buildUserText } from '../lib/visualsJob.mts';
 import { callMessages } from '../lib/anthropic.mts';
 
@@ -50,6 +50,8 @@ export default async (req: Request): Promise<Response> => {
     const notes = stripIllustrationNotes(data);
     if (notes) console.log(`Removed ${notes} illustration note(s)`);
     tidyApostrophes(data);
+    const book = normalizeBookkeeping(data);
+    if (book.fol || book.dates || book.eft) console.log(`Bookkeeping conventions applied: ${book.fol} folio(s) cleared, ${book.dates} date(s) shortened, ${book.eft} EFT number(s)`);
     const iconsAdded = addDefaultIcons(data);
     if (iconsAdded) console.log(`Added ${iconsAdded} default emoji icon(s)`);
     data.lang = job.input.lang;
