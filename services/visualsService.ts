@@ -5,6 +5,9 @@ import { LessonData, spokenLines } from './lessonPlayer';
 import { cleanClip, normalizeLoudness } from '../utils/audioClean';
 import { splitTake, finishSegment } from '../utils/segmentTake';
 
+/** read: voice the slide text exactly as written. explain: Claude writes a lecturer's explanation from the slide outline. */
+export type VisualsMode = 'read' | 'explain';
+
 export type VisualsLevel = 'g8' | 'g9' | 'g10' | 'g11' | 'g12' | 'univ';
 
 const POLL_MS = 2000;
@@ -12,7 +15,7 @@ const POLL_LIMIT = 150; // 5 minutes
 
 /** Asks the server for slide visuals built around the slide text, then waits for the result. */
 export async function generateVisuals(
-  params: { text: string; lang: 'en' | 'af'; level: VisualsLevel; currency: string },
+  params: { text: string; lang: 'en' | 'af'; level: VisualsLevel; currency: string; mode: VisualsMode },
   signal?: AbortSignal,
 ): Promise<LessonData> {
   const start = await fetch('/api/visuals', {

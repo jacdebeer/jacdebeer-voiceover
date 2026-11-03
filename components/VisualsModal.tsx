@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Wand2, Loader, Download, Film, AlertCircle, CheckCircle2, Volume2 } from 'lucide-react';
 import { VoiceOption } from '../types';
 import { LessonData, buildPlayerHtml, checkScript } from '../services/lessonPlayer';
-import { generateVisuals, narrateLines, VisualsLevel, NarrationReport } from '../services/visualsService';
+import { generateVisuals, narrateLines, VisualsLevel, VisualsMode, NarrationReport } from '../services/visualsService';
 import { buildHyperframesZip, buildHyperframesPreviewHtml } from '../services/hyperframesExport';
 import { isAfrikaansText } from '../utils/language';
 
@@ -11,6 +11,7 @@ export interface VisualsEntry {
   data: LessonData;
   audio: Record<string, string>;
   report?: NarrationReport;
+  mode?: VisualsMode;
   slideText: string;
   voiceId: string;
   lang: 'en' | 'af';
@@ -38,6 +39,9 @@ const LEVELS: { id: VisualsLevel; label: string }[] = [
 export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language, voice, entry, onEntry, onClose }) => {
   const [level, setLevel] = useState<VisualsLevel>('univ');
   const [currency, setCurrency] = useState('R');
+  // A short outline (just headings) cannot make a voice-over by itself, so it starts in Explain. A finished script starts in Read.
+  const wordCount = slideText.trim().split(/\s+/).filter(Boolean).length;
+  const [mode, setMode] = useState<VisualsMode>(wordCount < 70 ? 'explain' : 'read');
   const [phase, setPhase] = useState<'idle' | 'visuals' | 'voice'>('idle');
   const [progress, setProgress] = useState({ done: 0, total: 0, phase: 'take' });
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +53,7 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
   // the voice, the prompt and the stored result all follow the text itself, not just the toggle
   const textLang: 'en' | 'af' = isAfrikaansText(slideText, language) ? 'af' : 'en';
   const af = language === 'af';
-  const stale = entry && (entry.slideText !== slideText || entry.lang !== textLang);
+  const stale = entry && (entry.slideText !== slideText || entry.lang !== textLang || (entry.mode ?? 'read') !== mode);
   const voiceChanged = entry && entry.voiceId !== voice.id;
 
   const run = async (reuseVisuals: boolean) => {
@@ -60,11 +64,11 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
       let data = reuseVisuals && entry ? entry.data : null;
       if (!data) {
         setPhase('visuals');
-        data = await generateVisuals({ text: slideText, lang: textLang, level, currency }, ctl.signal);
+        data = await generateVisuals({ text: slideText, lang: textLang, level, currency, mode }, ctl.signal);
       }
       setPhase('voice');
       const { audio, report } = await narrateLines(data, voice, textLang === 'af', (done, total, phase) => setProgress({ done, total, phase }), ctl.signal);
-      onEntry({ data, audio, report, slideText, voiceId: voice.id, lang: textLang });
+      onEntry({ data, audio, report, slideText, voiceId: voice.id, lang: textLang, mode });
     } catch (e: any) {
       if (e?.name === 'AbortError') setError('Stopped.');
       else if (e?.isQuotaExceeded) setError('The narrator voice has reached its quota. Try another voice, or wait and retry.');
@@ -76,7 +80,7 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
   };
 
   const html = useMemo(() => (entry ? buildPlayerHtml(entry.data, entry.audio) : ''), [entry]);
-  const check = useMemo(() => (entry ? checkScript(entry.data, entry.slideText) : null), [entry]);
+  const check = useMemo(() => (entry && (entry.mode ?? 'read') === 'read' ? checkScript(entry.data, entry.slideText) : null), [entry]);
 
   const [view, setView] = useState<'player' | 'video'>('player');
   const [videoHtml, setVideoHtml] = useState('');
@@ -142,11 +146,25 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
 
         <div className="flex-1 min-h-0 flex flex-col md:flex-row">
           <div className="md:w-72 flex-none border-b md:border-b-0 md:border-r border-slate-100 p-4 space-y-3 overflow-y-auto">
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              {af
-                ? 'Die skyfieteks word die skrif. Claude bou die beelde daarom heen, en elke sin word met die gekose stem opgeneem sodat die beelde saam met die stem verskyn.'
-                : 'The slide text is the script. Claude builds the visuals around it, and each sentence is voiced with the selected narrator so the visuals appear in step with the voice.'}
-            </p>
+            <div className="space-y-1.5">
+              <div className="text-[11px] font-bold text-slate-700">{af ? 'Stemopname' : 'Voice-over'}</div>
+              {([
+                ['explain', af ? 'Verduidelik die skyfie' : 'Explain the slide', af ? 'Claude skryf \'n dosent se verduideliking uit die skyfie-opskrifte, met voorbeelde en rekeningkundige beelde.' : 'Claude writes a lecturer\'s explanation from the slide outline, with a worked example and accounting visuals. Best for short slides.'],
+                ['read', af ? 'Lees die skyfieteks presies' : 'Read the slide text exactly', af ? 'Die stem sê net wat op die skyfie staan. Beste vir \'n voltooide skrif.' : 'The voice says exactly what is on the slide. Best for a finished script.'],
+              ] as const).map(([id, label, hint]) => (
+                <label key={id} className={`block rounded-lg border p-2 cursor-pointer ${mode === id ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'} ${busy ? 'opacity-60 pointer-events-none' : ''}`}>
+                  <div className="flex items-center gap-2 text-[11px] font-bold text-slate-700">
+                    <input type="radio" name="visuals-mode" checked={mode === id} onChange={() => setMode(id)} /> {label}
+                  </div>
+                  <div className="text-[10px] text-slate-500 leading-snug mt-0.5">{hint}</div>
+                </label>
+              ))}
+              {mode === 'read' && wordCount < 70 && (
+                <div className="text-[10px] text-amber-700 leading-snug">
+                  {af ? `Die skyfie het net ${wordCount} woorde. Kies Verduidelik vir 'n volle stemopname.` : `This slide has only ${wordCount} words, so the voice will only say those. Choose Explain for a full voice-over.`}
+                </div>
+              )}
+            </div>
             <label className="block text-[11px] font-bold text-slate-700">
               {af ? 'Vir' : 'Audience'}
               <select value={level} onChange={(e) => setLevel(e.target.value as VisualsLevel)} disabled={busy}
