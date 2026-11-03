@@ -2,7 +2,7 @@ import { GoogleGenAI, Modality } from '@google/genai';
 import { getUser } from '@netlify/identity';
 import { getStore } from '@netlify/blobs';
 import type { Config } from '@netlify/functions';
-import { VISUALS_STORE, LEVELS, type Level } from '../lib/visualsJob.mts';
+import { VISUALS_STORE, LEVELS, type Level, type Mode } from '../lib/visualsJob.mts';
 // @ts-ignore - plain JS module
 import { afrikaansGlossaryPrompt } from '../lib/afrikaansTerms.mjs';
 // @ts-ignore - plain JS module
@@ -369,6 +369,7 @@ async function visualsRoute(req: Request, route: string, userKey: string): Promi
     if (!text) return json({ error: 'The slide text is empty or too long.' }, 400);
     const lang = body?.lang === 'af' ? 'af' : 'en';
     const level: Level = (LEVELS as readonly string[]).includes(body?.level) ? body.level : 'univ';
+    const mode: Mode = body?.mode === 'explain' ? 'explain' : 'read';
     const currency = typeof body?.currency === 'string' && body.currency.trim() ? body.currency.trim().slice(0, 4) : 'R';
     if (!process.env.ANTHROPIC_API_KEY) return json({ error: 'The server is missing its Anthropic API key.' }, 500);
 
@@ -376,7 +377,7 @@ async function visualsRoute(req: Request, route: string, userKey: string): Promi
     await getStore(VISUALS_STORE).setJSON(jobId, {
       status: 'queued',
       owner: userKey,
-      input: { text, lang, level, currency },
+      input: { text, lang, level, currency, mode },
       createdAt: Date.now(),
     });
     // Returns 202 at once; the work continues for up to 15 minutes.

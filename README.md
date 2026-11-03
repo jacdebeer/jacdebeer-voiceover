@@ -61,3 +61,13 @@ Not included yet: visuals and their audio are kept in memory for the open page o
 ### Emoji
 
 Every beat, card, formula part, change item, flow step and text box (and the lesson heading) can carry one accounting emoji, shown large (beat and lesson titles inline, flow and formula icons above the label). The prompt asks for them; `addDefaultIcons` in `netlify/lib/lessonRepair.mjs` fills in any that are missing from the wording (Afrikaans or English keywords: bank 🏦, kontant 💰, faktuur 🧾, joernaal 📒, toeneem 📈, ...), so a slide never comes back without them. Emoji are never spoken.
+
+### Explain mode (voice-over written from a slide outline)
+
+The Slide visuals window has two voice-over modes:
+- **Explain the slide**: for a short outline (just headings). Claude acts as the lecturer, as the original GSA-accounts-explainer did: it teaches every point in order, follows the accounting cycle (source document, calculation, journal, ledger T-accounts, accounting equation), uses one short worked example with round illustrative figures (labelled as illustration), and writes the spoken explanation itself. Slides under 70 words start in this mode.
+- **Read the slide text exactly**: the voice says only what is on the slide, with the repeat repair and the word-for-word check. Best for a finished script.
+
+In Explain mode the repeat repair removes only sentences that repeat earlier ones, and the script check is not shown. The voice is still one continuous take, cut into lines.
+
+The video export also checks that wide blocks (T-accounts, journals) fit inside the frame and their own boxes, not just that they are not too tall.

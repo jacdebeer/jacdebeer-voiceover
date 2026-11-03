@@ -2,7 +2,7 @@
 // It has no user session. The job id is an unguessable UUID that api.mts created for a signed-in user.
 import { getStore } from '@netlify/blobs';
 // @ts-ignore - plain JS module
-import { repairSpokenLines, addDefaultIcons } from '../lib/lessonRepair.mjs';
+import { repairSpokenLines, dedupeSelf, addDefaultIcons } from '../lib/lessonRepair.mjs';
 import { VISUALS_STORE, VISUALS_MODEL, VISUALS_MAX_OUTPUT_TOKENS, buildSystem, buildUserText } from '../lib/visualsJob.mts';
 
 export default async (req: Request): Promise<Response> => {
@@ -31,7 +31,7 @@ export default async (req: Request): Promise<Response> => {
       body: JSON.stringify({
         model: VISUALS_MODEL,
         max_tokens: VISUALS_MAX_OUTPUT_TOKENS,
-        system: buildSystem(job.input.lang),
+        system: buildSystem(job.input.lang, job.input.mode),
         messages: [{ role: 'user', content: buildUserText(job.input) }],
       }),
     });
@@ -52,11 +52,12 @@ export default async (req: Request): Promise<Response> => {
       throw new Error('The model returned text that is not valid JSON. Generate again.');
     }
     // the model sometimes speaks a sentence twice (caption and narration); keep each script sentence once
-    const { removed } = repairSpokenLines(data, job.input.text);
+    const { removed } = job.input.mode === 'explain' ? dedupeSelf(data) : repairSpokenLines(data, job.input.text);
     if (removed.length) console.log(`Removed ${removed.length} repeated spoken line(s) from the lesson`);
     const iconsAdded = addDefaultIcons(data);
     if (iconsAdded) console.log(`Added ${iconsAdded} default emoji icon(s)`);
     data.lang = job.input.lang;
+    data.mode = job.input.mode === 'explain' ? 'explain' : 'read';
     data.currency = job.input.currency;
     await store.setJSON(jobId, { ...base, status: 'done', data });
   } catch (err: any) {

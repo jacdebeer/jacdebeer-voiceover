@@ -58,6 +58,38 @@ export function repairSpokenLines(data, scriptText) {
   return { data, removed };
 }
 
+/**
+ * Explain mode has no script to compare with, so only repeats are removed: a narration entry (or caption) that says the same
+ * words as a line already spoken earlier in the lesson is blanked.
+ */
+export function dedupeSelf(data) {
+  const removed = [];
+  if (!Array.isArray(data?.beats)) return { data, removed };
+  const seen = new Set();
+  const key = (t) => words(t).join(' ');
+  const once = (t) => {
+    const k = key(t);
+    if (!k) return true;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  };
+  for (const beat of data.beats) {
+    if (typeof beat.caption === 'string' && beat.caption.trim() && !once(beat.caption)) {
+      removed.push(beat.caption);
+      beat.caption = '';
+    }
+    if (Array.isArray(beat.narration)) {
+      beat.narration = beat.narration.map((n) => {
+        if (typeof n !== 'string' || !n.trim() || once(n)) return n;
+        removed.push(n);
+        return '';
+      });
+    }
+  }
+  return { data, removed };
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Accounting emoji. The prompt asks the model for an "icon" on every beat, card, formula part, change item, flow step and
 // text box. When it leaves one out, a fitting emoji is chosen from the wording (Afrikaans or English), so a slide never

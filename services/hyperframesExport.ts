@@ -289,7 +289,15 @@ async function fitZoom(html: (zoom: number[]) => string, count: number): Promise
         const top = inner.getBoundingClientRect().top;
         const kids = Array.from(inner.children) as HTMLElement[];
         const bottom = Math.max(...kids.map((k) => k.getBoundingClientRect().bottom));
-        if (bottom - top <= room) {
+        // wide blocks (T-accounts, journals) must not be cut off on the right either
+        const innerRight = inner.getBoundingClientRect().right;
+        const right = Math.max(...Array.from(inner.querySelectorAll('*')).map((n) => (n as HTMLElement).getBoundingClientRect().right));
+        // and no box may be wider inside than it is itself (a table sticking out of its card)
+        const spills = Array.from(inner.querySelectorAll('*')).some((n) => {
+          const e = n as HTMLElement;
+          return e.clientWidth > 0 && e.scrollWidth > e.clientWidth + 1;
+        });
+        if (bottom - top <= room && right <= innerRight + 1 && !spills) {
           chosen = z;
           break;
         }
