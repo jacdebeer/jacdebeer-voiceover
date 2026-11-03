@@ -54,6 +54,11 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  // Get Sharp Academy branding on the page, the video and the saved lesson (on by default; one setting for both windows)
+  const [brand, setBrand] = useState(() => { try { return localStorage.getItem('brand-on') !== '0'; } catch { return true; } });
+  useEffect(() => { try { localStorage.setItem('brand-on', brand ? '1' : '0'); } catch { /* storage unavailable */ } }, [brand]);
+  const branded = (d: LessonData): LessonData => ({ ...d, brand });
+
   const busy = phase !== 'idle';
   // the voice, the prompt and the stored result all follow the text itself, not just the toggle
   const textLang: 'en' | 'af' = isAfrikaansText(slideText, language) ? 'af' : 'en';
@@ -134,7 +139,7 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
     onEntry(prev);
   };
 
-  const html = useMemo(() => (entry ? buildPlayerHtml(entry.data, entry.audio) : ''), [entry]);
+  const html = useMemo(() => (entry ? buildPlayerHtml(branded(entry.data), entry.audio) : ''), [entry, brand]);
   const check = useMemo(() => (entry && (entry.mode ?? 'read') === 'read' && !entry.edited ? checkScript(entry.data, entry.slideText) : null), [entry]);
 
   const [view, setView] = useState<'player' | 'video'>('player');
@@ -146,12 +151,12 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
     if (view !== 'video' || !entry) return;
     let cancelled = false;
     setVideoBusy(true);
-    buildHyperframesPreviewHtml(entry.data, entry.audio, slideNumber)
+    buildHyperframesPreviewHtml(branded(entry.data), entry.audio, slideNumber)
       .then((h) => { if (!cancelled) setVideoHtml(h); })
       .catch((e) => { if (!cancelled) setError(e?.message || 'Could not build the video preview.'); })
       .finally(() => { if (!cancelled) setVideoBusy(false); });
     return () => { cancelled = true; };
-  }, [view, entry, slideNumber]);
+  }, [view, entry, slideNumber, brand]);
 
   const [exporting, setExporting] = useState(false);
   const [saving, setSaving] = useState<{ done: number; total: number; phase: string } | null>(null);
@@ -166,7 +171,7 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
     setSaving({ done: 0, total: 0, phase: 'create' });
     try {
       const r = await saveLesson(
-        { title: title.trim(), slideLabel: `${af ? 'Skyfie' : 'Slide'} ${slideNumber}`, voiceLabel: voice.label, lang: entry.lang, mode: entry.mode, data: entry.data, audio: entry.audio },
+        { title: title.trim(), slideLabel: `${af ? 'Skyfie' : 'Slide'} ${slideNumber}`, voiceLabel: voice.label, lang: entry.lang, mode: entry.mode, data: branded(entry.data), audio: entry.audio },
         (done, total, phase) => setSaving({ done, total, phase }),
       );
       setSavedAs({ title: title.trim(), token: r.token });
@@ -181,7 +186,7 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
     setExporting(true);
     setError(null);
     try {
-      const zip = await buildHyperframesZip(entry.data, entry.audio, slideNumber);
+      const zip = await buildHyperframesZip(branded(entry.data), entry.audio, slideNumber);
       const url = URL.createObjectURL(zip);
       const a = document.createElement('a');
       a.href = url;
@@ -203,7 +208,7 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
     try {
       // MP3 instead of WAV: the same voice-over at about a tenth of the file size
       const mp3 = await compressAudio(entry.audio);
-      const url = URL.createObjectURL(new Blob([buildPlayerHtml(entry.data, mp3)], { type: 'text/html' }));
+      const url = URL.createObjectURL(new Blob([buildPlayerHtml(branded(entry.data), mp3)], { type: 'text/html' }));
       const a = document.createElement('a');
       a.href = url;
       a.download = `slide-${slideNumber}-visuals.html`;
@@ -265,6 +270,10 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
               {af ? 'Geldeenheid' : 'Currency symbol'}
               <input value={currency} onChange={(e) => setCurrency(e.target.value)} disabled={busy} maxLength={4}
                 className="mt-1 w-20 px-2 py-1.5 rounded-lg border border-slate-300 text-xs" />
+            </label>
+
+            <label className="flex items-center gap-2 text-[11px] font-bold text-slate-700">
+              <input type="checkbox" checked={brand} onChange={(e) => setBrand(e.target.checked)} /> {af ? 'Get Sharp Academy-handelsmerk' : 'Get Sharp Academy branding'}
             </label>
 
             {busy ? (

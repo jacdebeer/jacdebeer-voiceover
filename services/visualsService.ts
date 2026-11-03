@@ -123,3 +123,25 @@ export async function narrateLines(
   await Promise.all([worker(), worker(), worker()]);
   return { audio, report: { mode: 'lines', check, note } };
 }
+
+/** A slide of 70 words or fewer is an outline, so the lecturer explains it; a longer one is read as it stands. */
+export const autoMode = (text: string): VisualsMode => (text.trim().split(/\s+/).filter(Boolean).length < 70 ? 'explain' : 'read');
+
+/**
+ * One whole slide: the visuals (or the ones already built, when only the voice is out of date) and then the voice-over.
+ * Used by the all-slides producer; the single-slide window runs the same two steps itself so it can show each phase.
+ */
+export async function produceSlide(
+  params: { text: string; lang: 'en' | 'af'; level: VisualsLevel; currency: string; mode: VisualsMode; voice: VoiceOption; reuse?: LessonData | null },
+  onProgress: (phase: 'visuals' | 'voice', done: number, total: number, sub: string) => void,
+  signal?: AbortSignal,
+): Promise<{ data: LessonData; audio: Record<string, string>; report: NarrationReport }> {
+  let data = params.reuse ?? null;
+  if (!data) {
+    onProgress('visuals', 0, 1, '');
+    data = await generateVisuals({ text: params.text, lang: params.lang, level: params.level, currency: params.currency, mode: params.mode }, signal);
+  }
+  onProgress('voice', 0, 3, 'take');
+  const { audio, report } = await narrateLines(data, params.voice, params.lang === 'af', (done, total, sub) => onProgress('voice', done, total, sub), signal, data.pronunciations as Record<string, string> | undefined);
+  return { data, audio, report };
+}

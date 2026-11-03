@@ -1,6 +1,7 @@
 import playerCss from '../lesson-player/player.css?raw';
 import { LessonData, buildPlayerHtml } from './lessonPlayer';
 import { makeZip } from '../utils/zip';
+import { BRAND, brandFontCss, brandPlayerCss } from '../brand/brand';
 
 const W = 1920;
 const H = 1080;
@@ -8,6 +9,7 @@ const FONT_PX = 26; // the player sizes everything in rem, so this scales it to 
 const LINE_GAP = 0.35; // seconds of air after a spoken line
 const SILENT_STEP = 1.2; // seconds a revealed row stays up when its line has no audio
 const BEAT_HOLD = 0.9;
+const END_CARD = 3.2; // seconds of the Get Sharp Academy end card
 const GSAP_URL = 'https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -125,8 +127,12 @@ function compositionHtml(
   id: string,
   zoom: number[],
   audioUris?: Record<string, string>, // set for the in-app preview: plays the lines itself instead of using <audio> files
+  logos?: { full: string; mark: string } | null, // the Get Sharp Academy logos (file paths in the zip, data URIs in the preview); null leaves the branding out
 ): string {
   const num = (n: number) => n.toFixed(3);
+  const branded = !!logos;
+  const end = branded ? END_CARD : 0;
+  const total = p.total + end;
   const sections = p.beats
     .map(
       (b, i) => `
@@ -138,6 +144,13 @@ function compositionHtml(
   </section>`,
     )
     .join('');
+
+  const endCard = branded
+    ? `
+  <section class="clip beat endcard" id="beatEnd" data-start="${num(p.total)}" data-duration="${num(end)}" data-track-index="1">
+    <div class="endInner"><img src="${logos!.full}" alt="${BRAND.name}"></div>
+  </section>`
+    : '';
 
   let n = 0;
   const subs: string[] = [];
@@ -168,13 +181,19 @@ function compositionHtml(
 <title>${esc(String(data.title || 'Slide explainer'))}</title>
 <style>
 ${playerCss.replace(/html\{font-size:var\(--fs\)\}/, '').replace(/transition:[^;}]*;?/g, '')}
+${branded ? brandFontCss() + brandPlayerCss().replace(/body\{background:[^}]*\}/, '') : ''}
+.block{overflow:visible;padding-bottom:0}
 /* the emoji fonts are OS-bundled: local() tells the renderer to use the machine's own copy */
 @font-face{font-family:'Apple Color Emoji';src:local('Apple Color Emoji')}
 @font-face{font-family:'Segoe UI Emoji';src:local('Segoe UI Emoji')}
 @font-face{font-family:'Noto Color Emoji';src:local('Noto Color Emoji')}
 html{font-size:${FONT_PX}px}
-html,body{margin:0;padding:0;background:#EEF1F6}
-#stage{position:relative;width:${W}px;height:${H}px;overflow:hidden;background:#EEF1F6;font-family:var(--font)}
+html,body{margin:0;padding:0;background:${branded ? '#EAF2F5' : '#EEF1F6'}}
+#stage{position:relative;width:${W}px;height:${H}px;overflow:hidden;background:${branded ? '#EAF2F5' : '#EEF1F6'};font-family:var(--font)}
+${branded ? `.wm{position:absolute;right:56px;top:30px;height:64px;width:auto;z-index:5}
+.beat.endcard{background:#FFFFFF;padding:0;z-index:10}
+.endcard .endInner{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center}
+.endInner img{height:520px;width:auto;display:block;margin:0 auto}` : ''}
 ${audioUris ? '#stage{position:absolute;left:0;top:0;transform-origin:0 0}.beat{display:none}html,body{overflow:hidden;height:100%}' : ''}
 .beat{position:absolute;inset:0;padding:48px 96px 150px}
 .beatInner{height:100%;overflow:hidden}
@@ -184,7 +203,8 @@ ${audioUris ? '#stage{position:absolute;left:0;top:0;transform-origin:0 0}.beat{
 </style>
 </head>
 <body>
-<div id="stage" data-composition-id="${id}" data-start="0" data-width="${W}" data-height="${H}">${sections}
+<div id="stage" data-composition-id="${id}" data-start="0" data-width="${W}" data-height="${H}">${sections}${endCard}
+  ${branded ? `<img class="wm" src="${logos!.mark}" alt="">` : ''}
   ${subs.join('\n  ')}
   ${audios.join('\n  ')}
   <script src="${GSAP_URL}"></script>
@@ -192,22 +212,24 @@ ${audioUris ? '#stage{position:absolute;left:0;top:0;transform-origin:0 0}.beat{
     var tl = gsap.timeline({ paused: true });
     function rows(i){ return document.querySelectorAll('#stage' + i + ' [data-reveal]'); }
     ${js.join('\n    ')}
-    tl.to({}, { duration: 0.001 }, ${num(p.total - 0.001)}); /* keeps the last beat on screen until the end */
+    ${branded ? `tl.fromTo('#beatEnd',{opacity:0},{opacity:1,duration:0.6,ease:'power1.out'},${num(p.total)});
+    tl.fromTo('#beatEnd img',{scale:0.94},{scale:1,duration:${num(end)},ease:'power1.out'},${num(p.total)});` : ''}
+    tl.to({}, { duration: 0.001 }, ${num(total - 0.001)}); /* keeps the last frame on screen until the end */
     window.__timelines = window.__timelines || {};
     window.__timelines[${JSON.stringify(id)}] = tl;
   </script>
-</div>${audioUris ? previewDriver(p, audioUris) : ''}
+</div>${audioUris ? previewDriver({ ...p, total }, audioUris, branded ? [{ id: 'beatEnd', start: +p.total.toFixed(3), end: +total.toFixed(3) }] : []) : ''}
 </body>
 </html>
 `;
 }
 
 /** Controls and a small clock that stand in for the HyperFrames player, so the composition can be watched in the app. */
-function previewDriver(p: Awaited<ReturnType<typeof plan>>, audioUris: Record<string, string>): string {
+function previewDriver(p: Awaited<ReturnType<typeof plan>>, audioUris: Record<string, string>, extraBeats: { id: string; start: number; end: number }[] = []): string {
   const cues = p.beats.flatMap((b) =>
     b.cues.filter((c) => c.file && audioUris[c.text]).map((c) => ({ start: +c.start.toFixed(3), dur: +c.dur.toFixed(3), src: audioUris[c.text] })),
   );
-  const beats = p.beats.map((b, i) => ({ id: 'beat' + i, start: +b.start.toFixed(3), end: +b.end.toFixed(3) }));
+  const beats = p.beats.map((b, i) => ({ id: 'beat' + i, start: +b.start.toFixed(3), end: +b.end.toFixed(3) })).concat(extraBeats);
   const data = JSON.stringify({ total: +p.total.toFixed(3), cues, beats }).replace(/</g, '\\u003c');
   return `
 <div id="bar"><button id="pp">&#9654;</button><input id="seek" type="range" min="0" max="1000" value="0"><span id="clock">0:00</span></div>
@@ -334,17 +356,20 @@ If a command or option differs on your version, run \`npx hyperframes --help\`.
 export async function buildHyperframesZip(
   data: LessonData,
   audio: Record<string, string>,
-  slideNumber: number,
+  slideNumber: number | string,
 ): Promise<Blob> {
   const id = `slide-${slideNumber}`;
   const p = await plan(data, audio);
   if (!p.beats.length) throw new Error('There are no beats to export.');
-  const build = (zoom: number[]) => compositionHtml(data, p, id, zoom);
+  const branded = data.brand !== false;
+  const logos = branded ? { full: 'assets/logo-full.png', mark: 'assets/logo-mark.png' } : null;
+  const build = (zoom: number[]) => compositionHtml(data, p, id, zoom, undefined, logos);
   const zoom = await fitZoom(build, p.beats.length);
   const enc = new TextEncoder();
   return makeZip([
     { path: 'index.html', data: enc.encode(build(zoom)) },
-    { path: 'README.md', data: enc.encode(readme(id, p.total)) },
+    { path: 'README.md', data: enc.encode(readme(id, p.total + (branded ? END_CARD : 0))) },
+    ...(branded ? [{ path: 'assets/logo-full.png', data: dataUriBytes(BRAND.logoFull) }, { path: 'assets/logo-mark.png', data: dataUriBytes(BRAND.logoMark) }] : []),
     ...p.files,
   ]);
 }
@@ -353,11 +378,12 @@ export async function buildHyperframesZip(
 export async function buildHyperframesPreviewHtml(
   data: LessonData,
   audio: Record<string, string>,
-  slideNumber: number,
+  slideNumber: number | string,
 ): Promise<string> {
   const id = `slide-${slideNumber}`;
   const p = await plan(data, audio);
   if (!p.beats.length) throw new Error('There are no beats to preview.');
-  const zoom = await fitZoom((z) => compositionHtml(data, p, id, z), p.beats.length);
-  return compositionHtml(data, p, id, zoom, audio);
+  const logos = data.brand !== false ? { full: BRAND.logoFull, mark: BRAND.logoMark } : null;
+  const zoom = await fitZoom((z) => compositionHtml(data, p, id, z, undefined, logos), p.beats.length);
+  return compositionHtml(data, p, id, zoom, audio, logos);
 }
