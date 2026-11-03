@@ -198,7 +198,8 @@ function rEquation(b){
   t.innerHTML = h;
   var wrap = el('div'); wrap.appendChild(t);
   var ok = Math.abs(A - (O + Li)) < 0.005;
-  wrap.appendChild(el('div','chk ' + (ok?'ok':'info'), (ok?'\u2713 ':'') + esc(L.assets) + ' ' + sgn(A) + ' \u00B7 ' + esc(L.oe) + ' + ' + esc(L.liab) + ' ' + sgn(O + Li) + (ok ? '' : ' \u2014 ' + esc(L.excerpt))));
+  /* the check is shown when it holds; an extract that does not balance gets no remark */
+  if(ok) wrap.appendChild(el('div','chk ok', '\u2713 ' + esc(L.assets) + ' ' + sgn(A) + ' \u00B7 ' + esc(L.oe) + ' + ' + esc(L.liab) + ' ' + sgn(O + Li)));
   return wrap;
 }
 
@@ -214,7 +215,7 @@ function rTrialBalance(b){
   t.innerHTML = h;
   var wrap = el('div'); wrap.appendChild(t);
   var ok = Math.abs(d - c) < 0.005;
-  wrap.appendChild(el('div','chk ' + (ok?'ok':'info'), (ok?'\u2713 ' + esc(L.balanced) : esc(L.excerpt) + ': ' + fmt(d) + ' \u00B7 ' + fmt(c))));
+  if(ok) wrap.appendChild(el('div','chk ok', '\u2713 ' + esc(L.balanced)));
   return wrap;
 }
 
@@ -415,8 +416,7 @@ function renderBeat(){
   });
   if(glN > 1 && (glDr > 0 || glCr > 0)){
     var glOk = Math.abs(glDr - glCr) < 0.005;
-    st.appendChild(el('div','chk ' + (glOk ? 'ok' : 'info'),
-      (glOk ? '\u2713 ' + esc(L.balanced) : esc(L.excerpt)) + ': ' + esc(L.debit) + ' ' + fmt(glDr) + ' \u00B7 ' + esc(L.credit) + ' ' + fmt(glCr)));
+    if(glOk) st.appendChild(el('div','chk ok', '\u2713 ' + esc(L.balanced) + ': ' + esc(L.debit) + ' ' + fmt(glDr) + ' \u00B7 ' + esc(L.credit) + ' ' + fmt(glCr)));
   }
   if(b.quiz) st.appendChild(quizEl(b.quiz));
   steps = Array.prototype.slice.call(st.querySelectorAll('[data-reveal]'));
