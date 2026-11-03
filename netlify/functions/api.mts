@@ -434,8 +434,16 @@ async function voiceCheck(body: any): Promise<Response> {
   const probability = typeof data.language_probability === 'number' ? data.language_probability : null;
   const text = String(data.text ?? '');
   const dutchWords: string[] = dutchWordsIn(text);
-  const heardDutch = ['nld', 'nl', 'dut', 'nld-nl'].includes(language) || dutchWords.length >= 2;
-  return json({ checked: true, language, probability, dutchWords, heardDutch, text });
+  // Scribe often labels Afrikaans as Dutch, so the label alone is not proof. How closely the transcript matches the Afrikaans
+  // script is: Afrikaans speech transcribed as Afrikaans matches, Dutch-sounding speech comes back with Dutch spellings.
+  const norm = (t: string) => t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const expected = typeof body?.expectedText === 'string' ? Array.from(new Set(norm(body.expectedText))) : [];
+  const heard = new Set(norm(text));
+  const matchPct = expected.length ? expected.filter((w) => heard.has(w)).length / expected.length : null;
+  const labelDutch = ['nld', 'nl', 'dut', 'nld-nl'].includes(language);
+  const heardDutch =
+    dutchWords.length >= 2 || (labelDutch && (probability ?? 1) >= 0.8 && (matchPct === null || matchPct < 0.8));
+  return json({ checked: true, language, probability, dutchWords, heardDutch, labelDutch, matchPct, text: text.slice(0, 400) });
 }
 
 export default async (req: Request): Promise<Response> => {
