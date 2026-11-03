@@ -4,6 +4,7 @@ import { CoursePage, VoiceOption } from '../types';
 import { LessonData, buildPlayerHtml, forDisplay, spokenLines } from '../services/lessonPlayer';
 import { produceSlide, autoMode, narrateLines, VisualsLevel, VisualsMode } from '../services/visualsService';
 import { mergeLessons, mergeAudio } from '../services/lessonMerge';
+import { exampleContext } from '../services/lessonContext';
 import { compressAudio, saveLesson } from '../services/libraryService';
 import { isAfrikaansText } from '../utils/language';
 import { slideSize, SLIDE_LIMITS } from '../utils/slideBalance';
@@ -79,9 +80,12 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
     setNotice(null);
     setBuilt(null);
     try {
+      // the lessons of the slides before this one: the next slide continues the same example figures
+      const made: LessonData[] = [];
       for (let i = 0; i < pages.length; i++) {
         const p = pages[i];
         const st = statuses[i];
+        if (st === 'ready' && entries[p.id]) { made.push(entries[p.id].data); continue; }
         if (st !== 'todo' && st !== 'revoice') continue;
         if (ctl.signal.aborted) throw new DOMException('Stopped', 'AbortError');
         const lang = langFor(p);
@@ -90,11 +94,12 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
         try {
           const prev = entries[p.id];
           const { data, audio, report } = await produceSlide(
-            { text: p.text, lang, level, currency, mode, voice, reuse: st === 'revoice' && prev ? prev.data : null },
+            { text: p.text, lang, level, currency, mode, voice, reuse: st === 'revoice' && prev ? prev.data : null, context: st === 'todo' ? exampleContext(made) : undefined },
             (phase, done, total, sub) => setNow({ index: i, phase, sub, done, total }),
             ctl.signal,
           );
           onEntry(p.id, { data, audio, report, slideText: p.text, voiceId: voice.id, lang, mode });
+          made.push(data);
         } catch (e: any) {
           if (e?.name === 'AbortError') throw e;
           if (e?.isQuotaExceeded) {

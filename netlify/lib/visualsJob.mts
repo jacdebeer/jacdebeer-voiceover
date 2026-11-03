@@ -61,7 +61,7 @@ export function buildSystem(lang: 'en' | 'af' = 'en', mode: Mode = 'read'): stri
   return body + '\n' + ICON_RULE + FIT_RULE + (lang === 'af' ? '\n\n' + afrikaansGlossaryPrompt() : '');
 }
 
-export function buildUserText(opts: { text: string; lang: 'en' | 'af'; level: Level; currency: string; mode?: Mode }): string {
+export function buildUserText(opts: { text: string; lang: 'en' | 'af'; level: Level; currency: string; mode?: Mode; context?: string }): string {
   const langName = opts.lang === 'af' ? 'Afrikaans' : 'English';
   const guide = (LEVEL_GUIDES as Record<string, string>)[opts.level];
   return (
@@ -71,6 +71,10 @@ export function buildUserText(opts: { text: string; lang: 'en' | 'af'; level: Le
     '\n\nCurrency symbol: ' + opts.currency +
     '\nThe ' + (opts.mode === 'explain' ? 'outline' : 'script') + ' is in ' + langName + '. Write every label, title, explanation and the whole voice-over in ' + langName + '.' +
     (opts.lang === 'af' ? ' Use South African Afrikaans accounting terminology.' : '') +
+    (opts.context
+      ? '\n\nSHARED EXAMPLE. Earlier slides of the same course already used these example figures (account, its entries, and the balance they add up to):\n' + opts.context +
+        '\nWhen a T-account, journal, equation or calculation of this slide is about an account named above, use EXACTLY these amounts and counter-accounts and carry on from them: the closing balance of an earlier account is the opening balance (Saldo b/o) of the same account here, and a new entry builds on it. Only invent new figures for accounts that are not listed. Do not repeat the earlier slides\' entries as if they were new, and do not mention that the figures come from earlier slides.'
+      : '') +
     (guide ? '\n\nAudience guide:\n' + guide : '') +
     '\n\n' + RECORDING_RULES +
     '\n\n' + LEDGER_RULE +

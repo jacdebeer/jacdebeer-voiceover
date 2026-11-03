@@ -394,13 +394,15 @@ async function visualsRoute(req: Request, route: string, userKey: string): Promi
     const level: Level = (LEVELS as readonly string[]).includes(body?.level) ? body.level : 'univ';
     const mode: Mode = body?.mode === 'explain' ? 'explain' : 'read';
     const currency = typeof body?.currency === 'string' && body.currency.trim() ? body.currency.trim().slice(0, 4) : 'R';
+    // the example figures earlier slides of the same course used, so this slide continues the same example
+    const context = typeof body?.context === 'string' && body.context.trim() ? body.context.trim().slice(0, 3000) : '';
     if (!process.env.ANTHROPIC_API_KEY) return json({ error: 'The server is missing its Anthropic API key.' }, 500);
 
     const jobId = crypto.randomUUID();
     await getStore(VISUALS_STORE).setJSON(jobId, {
       status: 'queued',
       owner: userKey,
-      input: { text, lang, level, currency, mode },
+      input: { text, lang, level, currency, mode, context },
       createdAt: Date.now(),
     });
     // Returns 202 at once; the work continues for up to 15 minutes.
