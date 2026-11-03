@@ -374,6 +374,17 @@ function layoutBeat(b){
     var bl = []; for(var q = r[0]; q < r[1]; q++) if(ids[q] !== 1000 && bl.indexOf(ids[q]) < 0) bl.push(ids[q]);
     return {from:r[0], to:r[1], lines:lines, blocks:bl};
   });
+  /* an element with no line of its own appears together with the next element that has one, instead of popping up in silence
+     (a script that has no sentence for it); blanks at the end join the last spoken group */
+  if(oneToOne && !spread && groups.some(function(g){ return g.lines.length; })){
+    var merged = [], pend = null;
+    groups.forEach(function(g){
+      var cur = pend ? {from:pend.from, to:g.to, lines:g.lines, blocks:pend.blocks.concat(g.blocks.filter(function(x){ return pend.blocks.indexOf(x) < 0; }))} : g;
+      if(g.lines.length){ merged.push(cur); pend = null; } else pend = cur;
+    });
+    if(pend){ var last = merged[merged.length - 1]; last.to = pend.to; pend.blocks.forEach(function(x){ if(last.blocks.indexOf(x) < 0) last.blocks.push(x); }); }
+    groups = merged;
+  }
 }
 function gIndex(){ var n = 0; for(var i = 0; i < groups.length; i++) if(groups[i].to <= si) n++; return n; }
 function groupLines(g){ return (groups[g] && groups[g].lines) || []; }
@@ -579,6 +590,7 @@ function navPaint(){
   var nav = document.getElementById('pNav');
   nav.innerHTML = '';
   beats.forEach(function(b, i){
+    if(b.group && (i === 0 || beats[i-1].group !== b.group)) nav.appendChild(el('div','grp', esc(b.group)));
     var p = el('button','pill' + (i === bi ? ' on' : (i < bi ? ' done' : '')), (i+1) + '. ' + esc(b.title||''));
     p.onclick = function(){ play(false); hush(); bi = i; renderBeat(); if(voiceOn) say(beats[i].caption || ''); };
     nav.appendChild(p);

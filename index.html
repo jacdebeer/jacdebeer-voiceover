@@ -4,11 +4,62 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CourseVoice AI</title>
+    <title>Get Sharp Academy | CourseVoice Studio</title>
+    <link rel="icon" type="image/png" href="./brand/favicon.png" />
     <meta name="description" content="Voice-over and audio transcription studio for e-learning with realistic conversational Afrikaans voices and Gemini Live audio conversations." />
-    <meta property="og:title" content="CourseVoice AI" />
+    <meta property="og:title" content="Get Sharp Academy | CourseVoice Studio" />
     <meta property="og:description" content="Voice-over and audio transcription studio for e-learning with realistic conversational Afrikaans voices and Gemini Live audio conversations." />
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Get Sharp Academy brand colours. The app's existing indigo / violet / emerald classes now render in the brand:
+      // indigo = navy #133756, violet and emerald = teal (#87c0cd at 300, darker steps derived for text and buttons).
+      if (window.tailwind) tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              indigo: { 50:'#EEF4F8',100:'#D9E6EE',200:'#B5CDDD',300:'#7FA3BD',400:'#4A7898',500:'#265A7E',600:'#133756',700:'#0F2D47',800:'#0B2238',900:'#07182A' },
+              violet: { 50:'#F0F8FA',100:'#DDEFF3',200:'#BBE0E8',300:'#87C0CD',400:'#5FA9BB',500:'#3F90A5',600:'#2C7388',700:'#235C6D',800:'#1B4655',900:'#133340' },
+              emerald:{ 50:'#F0F8FA',100:'#DDEFF3',200:'#BBE0E8',300:'#87C0CD',400:'#5FA9BB',500:'#3F90A5',600:'#2C7388',700:'#235C6D',800:'#1B4655',900:'#133340' }
+            }
+          }
+        }
+      };
+    </script>
+    <!-- the same palette for Tailwind 4 (the v3 config above is ignored there, and this block is ignored by v3) -->
+    <style type="text/tailwindcss">
+      @theme {
+        --color-indigo-50: #EEF4F8;
+        --color-indigo-100: #D9E6EE;
+        --color-indigo-200: #B5CDDD;
+        --color-indigo-300: #7FA3BD;
+        --color-indigo-400: #4A7898;
+        --color-indigo-500: #265A7E;
+        --color-indigo-600: #133756;
+        --color-indigo-700: #0F2D47;
+        --color-indigo-800: #0B2238;
+        --color-indigo-900: #07182A;
+        --color-violet-50: #F0F8FA;
+        --color-violet-100: #DDEFF3;
+        --color-violet-200: #BBE0E8;
+        --color-violet-300: #87C0CD;
+        --color-violet-400: #5FA9BB;
+        --color-violet-500: #3F90A5;
+        --color-violet-600: #2C7388;
+        --color-violet-700: #235C6D;
+        --color-violet-800: #1B4655;
+        --color-violet-900: #133340;
+        --color-emerald-50: #F0F8FA;
+        --color-emerald-100: #DDEFF3;
+        --color-emerald-200: #BBE0E8;
+        --color-emerald-300: #87C0CD;
+        --color-emerald-400: #5FA9BB;
+        --color-emerald-500: #3F90A5;
+        --color-emerald-600: #2C7388;
+        --color-emerald-700: #235C6D;
+        --color-emerald-800: #1B4655;
+        --color-emerald-900: #133340;
+      }
+    </style>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Load lamejs globally to avoid strict mode/ESM issues with legacy library -->
     <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
@@ -25,8 +76,14 @@
     <style>
       body {
         font-family: 'Inter', sans-serif;
-        background-color: #f8fafc;
+        background-color: #F4F8FA;
+        color: #133756;
       }
+      /* brand type: Editorial Today (Playfair Display stands in until the licensed file is added) for headings,
+         Antonio ExtraLight with +75 tracking for taglines and labels */
+      h1, h2, h3 { font-family: 'Editorial Today', 'Playfair Display', Georgia, serif !important; font-weight: 400 !important; letter-spacing: 0 !important; }
+      .brand-label { font-family: 'Antonio', 'Arial Narrow', sans-serif !important; font-weight: 300 !important; letter-spacing: 0.075em !important; text-transform: uppercase; }
+      .brand-tag { font-family: 'Antonio', 'Arial Narrow', sans-serif !important; font-weight: 200 !important; letter-spacing: 0.075em !important; }
       /* Custom scrollbar for text area */
       .custom-scrollbar::-webkit-scrollbar {
         width: 8px;

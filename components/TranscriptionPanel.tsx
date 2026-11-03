@@ -26,6 +26,9 @@ interface TranscriptionPanelProps {
   onApplyAsNewSlides: (text: string) => void;
   transcribedText: string;
   onTranscribedTextChange: (text: string) => void;
+  /** the text that is read aloud in "Lees Transkripsie Voor"; filled with the copy-over button */
+  voiceoverText: string;
+  onVoiceoverTextChange: (text: string) => void;
   voices: VoiceOption[];
   selectedVoiceId: string;
   onSelectVoiceId: (id: string) => void;
@@ -37,6 +40,8 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
   onApplyAsNewSlides,
   transcribedText,
   onTranscribedTextChange: setTranscribedText,
+  voiceoverText,
+  onVoiceoverTextChange: setVoiceoverText,
   voices,
   selectedVoiceId,
   onSelectVoiceId,
@@ -214,13 +219,28 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
     }
   };
 
-  const handleGenerateVoiceover = async () => {
+  const voiceoverRef = useRef<HTMLTextAreaElement>(null);
+  const [justCopied, setJustCopied] = useState(false);
+  /** Moves (copies) the transcription over to the voice-over card, where it can be edited on its own before it is read aloud. */
+  const copyOver = () => {
     if (!transcribedText.trim()) return;
+    setVoiceoverText(transcribedText);
+    setJustCopied(true);
+    setTimeout(() => setJustCopied(false), 2200);
+    // on a narrow screen the voice-over card is below the transcription: bring it into view
+    requestAnimationFrame(() => {
+      voiceoverRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      voiceoverRef.current?.focus({ preventScroll: true });
+    });
+  };
+
+  const handleGenerateVoiceover = async () => {
+    if (!voiceoverText.trim()) return;
 
     setIsGeneratingVoiceover(true);
     setErrorMessage(null);
     try {
-      const base64 = await generateSpeechForVoice(currentVoice, transcribedText, currentLanguage === 'af');
+      const base64 = await generateSpeechForVoice(currentVoice, voiceoverText, currentLanguage === 'af');
       void saveAudio('voiceover', decodeBase64(base64));
       const blob = base64ToWavBlob(base64);
       if (voiceoverUrl) URL.revokeObjectURL(voiceoverUrl);
@@ -238,7 +258,7 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
     } catch (err: any) {
       if (err.isQuotaExceeded || err.message === 'QUOTA_EXCEEDED') {
         speakWithWebSpeech(
-          transcribedText,
+          voiceoverText,
           currentLanguage,
           currentVoice.gender,
           1.0,
@@ -262,9 +282,9 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
       if (voiceoverUrl && voiceoverAudioRef.current) {
         voiceoverAudioRef.current.play();
         setIsPlayingVoiceover(true);
-      } else if (transcribedText.trim()) {
+      } else if (voiceoverText.trim()) {
         speakWithWebSpeech(
-          transcribedText,
+          voiceoverText,
           currentLanguage,
           currentVoice.gender,
           1.0,
@@ -537,7 +557,17 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
                 <span className="text-[11px] text-slate-400 font-bold">
                   {transcribedText.length} {currentLanguage === 'af' ? "karakters" : "characters"}
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={copyOver}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                    title={currentLanguage === 'af' ? "Kopieer die transkripsie na Lees Transkripsie Voor" : "Copy the transcription to Voice-over Your Transcription"}
+                    data-testid="copy-over"
+                  >
+                    {justCopied ? <Check size={13} /> : <Volume2 size={13} />}
+                    <span>{justCopied ? (currentLanguage === 'af' ? "Oorgekopieer" : "Copied over") : (currentLanguage === 'af' ? "Kopieer na Lees Voor" : "Copy to Voice-over")}</span>
+                    <ArrowRight size={13} />
+                  </button>
                   <button
                     onClick={() => onApplyToSlide(transcribedText)}
                     className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
@@ -615,11 +645,49 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
                 {currentVoice.conversationalBio}
               </p>
 
+              {/* The text that is read aloud: filled with the copy-over button, free to edit */}
+              <div className="mb-3">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="voiceover-text" className="text-[11px] font-bold text-slate-600">
+                    {currentLanguage === 'af' ? "Teks om voor te lees" : "Text to read aloud"}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={copyOver}
+                      disabled={!transcribedText.trim()}
+                      className="text-[11px] font-bold text-emerald-700 hover:underline disabled:opacity-40 disabled:no-underline flex items-center gap-1"
+                      data-testid="copy-over-right"
+                    >
+                      <Copy size={11} /> {currentLanguage === 'af' ? "Kopieer van transkripsie" : "Copy from transcription"}
+                    </button>
+                    {voiceoverText && (
+                      <button onClick={() => setVoiceoverText('')} className="text-[11px] font-bold text-slate-400 hover:text-rose-500">
+                        {currentLanguage === 'af' ? "Maak leeg" : "Clear"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <textarea
+                  id="voiceover-text"
+                  ref={voiceoverRef}
+                  value={voiceoverText}
+                  onChange={(e) => setVoiceoverText(e.target.value)}
+                  rows={6}
+                  placeholder={currentLanguage === 'af'
+                    ? "Kopieer die transkripsie hierheen met die knoppie, of tik of plak teks."
+                    : "Copy the transcription here with the button, or type or paste text."}
+                  className="w-full p-3 bg-white border border-emerald-200 rounded-xl text-slate-800 text-sm leading-relaxed resize-y focus:outline-none focus:border-emerald-500 custom-scrollbar"
+                />
+                <div className="text-right text-[10px] text-slate-400 font-bold mt-0.5">
+                  {voiceoverText.length} {currentLanguage === 'af' ? "karakters" : "characters"}
+                </div>
+              </div>
+
               {/* Instant Voiceover generator for the transcribed text */}
               <div className="pt-3 border-t border-emerald-200/60 flex items-center justify-between gap-3">
                 <button
                   onClick={handleGenerateVoiceover}
-                  disabled={!transcribedText.trim() || isGeneratingVoiceover}
+                  disabled={!voiceoverText.trim() || isGeneratingVoiceover}
                   className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-200 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                 >
                   {isGeneratingVoiceover ? (

@@ -1,3 +1,4 @@
+import { BRAND } from '../brand/brand';
 import React, { useEffect, useState } from 'react';
 import {
   login,
@@ -31,6 +32,7 @@ const buttonClass =
 const Card: React.FC<{ title: string; subtitle: string; children: React.ReactNode }> = ({ title, subtitle, children }) => (
   <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
     <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg border border-slate-100 p-6 space-y-4">
+      <img src={BRAND.logoFull} alt={BRAND.name} className="h-24 w-auto mx-auto" />
       <div>
         <h1 className="text-lg font-extrabold text-slate-800">{title}</h1>
         <p className="text-xs text-slate-500 mt-1">{subtitle}</p>
@@ -145,14 +147,17 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
   return (
     <div className="h-screen flex flex-col">
-      <div className="flex-none flex items-center justify-end gap-2 bg-white border-b border-slate-200 px-4 py-1 text-[11px] text-slate-600">
-        <span className="hidden sm:inline" title={email}>{email}</span>
+      <div className="flex-none flex items-center justify-between gap-2 bg-indigo-600 px-4 py-1 text-[11px] text-white">
+        <span className="brand-tag text-sm text-violet-300 hidden sm:inline">{BRAND.tagline}</span>
+        <span className="flex items-center gap-2 ml-auto">
+        <span className="hidden sm:inline text-white/80" title={email}>{email}</span>
         <button
           onClick={async () => { await logout(); setEmail(null); }}
-          className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200 font-bold text-slate-700"
+          className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 font-bold text-white"
         >
           Sign out
         </button>
+        </span>
       </div>
       <div className="flex-1 min-h-0">{children}</div>
     </div>

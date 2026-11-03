@@ -3,7 +3,7 @@ import {
   Mic, BookOpen, Sparkles, AlertCircle, ArrowRightLeft, ChevronLeft, ChevronRight, 
   ScanSearch, FileUp, Gauge, Volume2, Loader, Square, Layers, Wand2, Trash2, 
   X, HelpCircle, Library, CheckCircle2, Plus, Scissors, Combine, ArrowBigRightDash, 
-  Radio, FileText, AudioWaveform, MessageSquare
+  Radio, FileText, AudioWaveform, MessageSquare, Languages, Undo2, Presentation
 } from 'lucide-react';
 import { VoiceName, VOICE_OPTIONS, AudioState, CoursePage, VoiceOption } from './types';
 import { generateSpeechForVoice, generateCheckedSpeech, translateText, enhanceConversationalScript, fetchLibraryVoices, fetchElevenLabsVoices } from './services/geminiService';
@@ -16,6 +16,10 @@ import { TranscriptionPanel } from './components/TranscriptionPanel';
 import { LiveConversationModal } from './components/LiveConversationModal';
 import { VisualsModal, VisualsEntry } from './components/VisualsModal';
 import { LibraryModal } from './components/LibraryModal';
+import { BalanceModal } from './components/BalanceModal';
+import { AllSlidesModal } from './components/AllSlidesModal';
+import { slideSize, SLIDE_LIMITS } from './utils/slideBalance';
+import { BRAND } from './brand/brand';
 import { isAfrikaansText } from './utils/language';
 
 // Live chat needs the WebSocket server in server.ts, which Netlify cannot host.
@@ -178,6 +182,11 @@ const App: React.FC = () => {
   const [isLiveModalOpen, setIsLiveModalOpen] = useState(false);
   const [showVisuals, setShowVisuals] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [showBalance, setShowBalance] = useState(false);
+  const [showAllVisuals, setShowAllVisuals] = useState(false);
+  // the last whole-lesson change (translate all, balance), so it can be undone
+  const [structUndo, setStructUndo] = useState<{ label: string; pages: CoursePage[]; pageIndex: number; language: Language; visuals: Record<number, VisualsEntry> } | null>(null);
+  const [translateAllProgress, setTranslateAllProgress] = useState<{ current: number; total: number } | null>(null);
   // Visuals built for each slide, kept until the page is closed.
   const [visualsBySlide, setVisualsBySlide] = useState<Record<number, VisualsEntry>>({});
   const [language, setLanguage] = useState<Language>(() => {
@@ -194,6 +203,7 @@ const App: React.FC = () => {
   const [text, setText] = useState<string>(DEFAULT_TEXT_AF);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>('sannie');
   const [transcribedText, setTranscribedText] = useState<string>('');
+  const [voiceoverText, setVoiceoverText] = useState<string>('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const hydratedRef = useRef(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
@@ -223,6 +233,7 @@ const App: React.FC = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const t = TRANSLATIONS[language];
+  const af = language === 'af';
 
   // Built-in voices plus the Afrikaans and English UK voices loaded from the Gemini Voice Library
   const [libraryVoices, setLibraryVoices] = useState<VoiceOption[]>([]);
@@ -619,30 +630,98 @@ const App: React.FC = () => {
     }
   };
 
-  const handlePageChange = (direction: 'next' | 'prev') => {
-    const newIndex = direction === 'next' ? pageIndex + 1 : pageIndex - 1;
-    if (newIndex >= 0 && newIndex < pages.length) {
-      stopAudio();
-      setPageIndex(newIndex);
-      const targetPage = pages[newIndex];
-      setText(targetPage.text);
-      
-      if (targetPage.audioData) {
-        if (currentBlobUrlRef.current) URL.revokeObjectURL(currentBlobUrlRef.current);
-        const blob = pcmToWavBlob(targetPage.audioData, 24000);
-        const url = URL.createObjectURL(blob);
-        currentBlobUrlRef.current = url;
-        if (audioRef.current) {
-          audioRef.current.src = url;
-          audioRef.current.playbackRate = playbackSpeed;
-          audioRef.current.load();
-        }
-        setAudioState(prev => ({ ...prev, hasAudio: true, error: null }));
-      } else {
-        setAudioState(prev => ({ ...prev, hasAudio: false, error: null }));
-        if (audioRef.current) audioRef.current.src = '';
+  const goToPage = (newIndex: number, list: CoursePage[] = pages) => {
+    if (newIndex < 0 || newIndex >= list.length) return;
+    stopAudio();
+    setPageIndex(newIndex);
+    const targetPage = list[newIndex];
+    setText(targetPage.text);
+
+    if (targetPage.audioData) {
+      if (currentBlobUrlRef.current) URL.revokeObjectURL(currentBlobUrlRef.current);
+      const blob = pcmToWavBlob(targetPage.audioData, 24000);
+      const url = URL.createObjectURL(blob);
+      currentBlobUrlRef.current = url;
+      if (audioRef.current) {
+        audioRef.current.src = url;
+        audioRef.current.playbackRate = playbackSpeed;
+        audioRef.current.load();
       }
+      setAudioState(prev => ({ ...prev, hasAudio: true, error: null }));
+    } else {
+      setAudioState(prev => ({ ...prev, hasAudio: false, error: null }));
+      if (audioRef.current) audioRef.current.src = '';
     }
+  };
+
+  const handlePageChange = (direction: 'next' | 'prev') => goToPage(direction === 'next' ? pageIndex + 1 : pageIndex - 1);
+
+  // ---- whole-lesson changes: translate every slide, balance slide lengths. Each can be undone.
+  const snapshot = (label: string) => setStructUndo({ label, pages, pageIndex, language, visuals: visualsBySlide });
+
+  const handleTranslateAll = async () => {
+    const filled = pages.filter((p) => p.text.trim()).length;
+    if (!filled || isTranslating) return;
+    const target = language === 'en' ? 'Afrikaans' : 'English';
+    const ok = window.confirm(
+      language === 'af'
+        ? `Vertaal al ${filled} skyfies na Engels? Die klank en beelde van die skyfies moet daarna weer gemaak word. Jy kan dit ontdoen.`
+        : `Translate all ${filled} slides to Afrikaans? Their audio and visuals will have to be made again. You can undo it.`
+    );
+    if (!ok) return;
+    setIsTranslating(true);
+    setTranslateAllProgress({ current: 0, total: filled });
+    const ctl = new AbortController();
+    abortControllerRef.current = ctl;
+    try {
+      // translate everything first and change nothing until every slide has worked: no half-translated lesson
+      const out: string[] = [];
+      let done = 0;
+      for (const p of pages) {
+        if (ctl.signal.aborted) throw new DOMException('Stopped', 'AbortError');
+        if (!p.text.trim()) { out.push(p.text); continue; }
+        out.push(await translateText(p.text, target));
+        setTranslateAllProgress({ current: ++done, total: filled });
+      }
+      snapshot(language === 'af' ? 'Alle skyfies vertaal' : 'All slides translated');
+      const next = pages.map((p, i) => ({ id: p.id, text: out[i] }));
+      setPages(next);
+      setText(next[pageIndex].text);
+      setLanguage(language === 'en' ? 'af' : 'en');
+      try { localStorage.setItem('app-language', language === 'en' ? 'af' : 'en'); } catch { /* storage unavailable */ }
+      setVisualsBySlide({});
+      stopAudio();
+      setAudioState(prev => ({ ...prev, hasAudio: false }));
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') alert(language === 'af' ? 'Vertaling het misluk. Niks is verander nie.' : 'Translation failed. Nothing was changed.');
+    } finally {
+      setIsTranslating(false);
+      setTranslateAllProgress(null);
+    }
+  };
+
+  const applyBalance = (slides: { text: string; keepId?: number }[]) => {
+    snapshot(language === 'af' ? `Skyfies gebalanseer (${pages.length} → ${slides.length})` : `Slides balanced (${pages.length} → ${slides.length})`);
+    const byId = new Map<number, CoursePage>(pages.map((p): [number, CoursePage] => [p.id, p]));
+    let nextId = Date.now();
+    const next: CoursePage[] = slides.map((sl) => {
+      const old = sl.keepId !== undefined ? byId.get(sl.keepId) : undefined;
+      return old ? old : { id: nextId++, text: sl.text };
+    });
+    const idx = Math.min(pageIndex, next.length - 1);
+    setPages(next);
+    setShowBalance(false);
+    goToPage(idx, next);
+  };
+
+  const undoStructure = () => {
+    if (!structUndo) return;
+    setPages(structUndo.pages);
+    setLanguage(structUndo.language);
+    try { localStorage.setItem('app-language', structUndo.language); } catch { /* storage unavailable */ }
+    setVisualsBySlide(structUndo.visuals);
+    goToPage(Math.min(structUndo.pageIndex, structUndo.pages.length - 1), structUndo.pages);
+    setStructUndo(null);
   };
 
   const handleDeleteBlock = () => {
@@ -684,7 +763,7 @@ const App: React.FC = () => {
     const newPages = [...pages];
     newPages.splice(pageIndex + 1, 0, newPage);
     setPages(newPages);
-    handlePageChange('next');
+    goToPage(pageIndex + 1, newPages);
   };
 
   const handleSplitAtCursor = () => {
@@ -835,21 +914,12 @@ const App: React.FC = () => {
       
       {/* Top Application Bar */}
       <header className="flex-none flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200 max-w-[1600px] mx-auto w-full">
-        <div className="flex items-center space-x-3">
-          <div className="bg-gradient-to-tr from-indigo-600 to-violet-600 p-2.5 rounded-xl shadow-md shadow-indigo-200">
-            <BookOpen className="text-white" size={20} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600">
-                CourseVoice AI
-              </h1>
-              <span className="text-[9px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-100">
-                PRO STUDIO
-              </span>
-            </div>
-            <p className="text-[10px] text-slate-400 font-bold tracking-tight">
-              {language === 'af' ? "E-Kursus Stemme & Klank-Transkripsie" : "eCourse Voiceover & Audio Transcription"}
+        <div className="flex items-center gap-3">
+          <img src={BRAND.logoMark} alt={BRAND.name} className="h-11 w-auto" />
+          <div className="hidden sm:block">
+            <h1 className="text-xl text-indigo-600 leading-none whitespace-nowrap">Get Sharp Academy</h1>
+            <p className="brand-tag text-[13px] text-slate-500 leading-tight mt-1 whitespace-nowrap">
+              CourseVoice Studio · {language === 'af' ? "Skyfies, stem en beelde" : "Slides, voice and visuals"}
             </p>
           </div>
         </div>
@@ -888,7 +958,7 @@ const App: React.FC = () => {
           {LIVE_CHAT_ENABLED && (
           <button
             onClick={() => setIsLiveModalOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white rounded-xl text-xs font-extrabold shadow-md shadow-violet-200 transition-all transform active:scale-95"
+            className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-md shadow-violet-200 transition-all transform active:scale-95"
             title="Converse in real-time with Gemini 3.8 Live API"
           >
             <Radio size={14} className="animate-pulse" />
@@ -954,6 +1024,8 @@ const App: React.FC = () => {
             onApplyAsNewSlides={handleApplyTranscriptionAsNewSlides}
             transcribedText={transcribedText}
             onTranscribedTextChange={setTranscribedText}
+            voiceoverText={voiceoverText}
+            onVoiceoverTextChange={setVoiceoverText}
             voices={allVoices}
             selectedVoiceId={selectedVoiceId}
             onSelectVoiceId={setSelectedVoiceId}
@@ -961,72 +1033,100 @@ const App: React.FC = () => {
         ) : (
           <div className="lg:h-full grid grid-cols-1 lg:grid-cols-12 gap-5 lg:min-h-0">
             
-            {/* Left: Slide Editor & Navigation */}
+            {/* Left: Slides - import, edit, language, structure */}
             <div className="lg:col-span-7 flex flex-col min-h-[460px] lg:min-h-0 relative">
               {currentStep === 1 && <StepPopup step={1} />}
               {currentStep === 2 && <StepPopup step={2} />}
 
-              {/* Toolbar */}
-              <div className="flex-none bg-white rounded-t-xl shadow-sm border border-slate-200 border-b-0 p-3 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center space-x-2">
-                  <div className="relative">
-                    <input 
-                      type="file" 
-                      accept=".pdf" 
-                      ref={fileInputRef} 
-                      onChange={handlePdfUpload} 
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
-                    />
-                    <button 
-                      disabled={audioState.isLoading} 
-                      className="flex items-center space-x-2 px-3 py-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors text-xs font-bold"
-                    >
-                      <FileUp size={14} className="text-indigo-600" />
-                      <span>{t.uploadPdf}</span>
+              {/* Toolbar, grouped in the order the work goes: bring content in, edit it, set the language, shape the slides */}
+              <div className="flex-none bg-white rounded-t-xl shadow-sm border border-slate-200 border-b-0 px-3 py-2.5 flex flex-wrap items-end gap-x-4 gap-y-2">
+                <div>
+                  <div className="brand-label text-[10px] text-slate-400 mb-1">{af ? '1 · Inhoud' : '1 · Content'}</div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="relative">
+                      <input type="file" accept=".pdf" ref={fileInputRef} onChange={handlePdfUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                      <button disabled={audioState.isLoading} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors text-xs font-bold">
+                        <FileUp size={13} className="text-indigo-600" /><span>{t.uploadPdf}</span>
+                      </button>
+                    </div>
+                    <button onClick={handleExtract} disabled={audioState.isLoading} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors text-xs font-bold">
+                      <ScanSearch size={13} className="text-indigo-600" /><span>{t.extractPage}</span>
                     </button>
                   </div>
-                  <button 
-                    onClick={handleExtract} 
-                    disabled={audioState.isLoading} 
-                    className="flex items-center space-x-2 px-3 py-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors text-xs font-bold"
-                  >
-                    <ScanSearch size={14} className="text-indigo-600" />
-                    <span>{t.extractPage}</span>
-                  </button>
                 </div>
 
-                <div className="flex items-center space-x-2">
-                  {/* Conversational Script Enhancer */}
-                  <button 
-                    onClick={handleEnhanceConversational} 
-                    disabled={isEnhancingScript || audioState.isLoading} 
-                    className="flex items-center space-x-1.5 text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors" 
-                    title={t.enhanceTooltip}
-                  >
-                    {isEnhancingScript ? <Loader className="animate-spin" size={14} /> : <AudioWaveform size={14} />}
-                    <span>{t.enhanceConversational}</span>
-                  </button>
+                <div>
+                  <div className="brand-label text-[10px] text-slate-400 mb-1">{af ? '2 · Redigeer' : '2 · Edit'}</div>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={handleEnhanceConversational} disabled={isEnhancingScript || audioState.isLoading}
+                      className="flex items-center gap-1.5 text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors" title={t.enhanceTooltip}>
+                      {isEnhancingScript ? <Loader className="animate-spin" size={13} /> : <AudioWaveform size={13} />}<span>{t.enhanceConversational}</span>
+                    </button>
+                    <button onClick={handleRepairText} className="flex items-center gap-1.5 text-slate-500 hover:text-indigo-700 text-xs font-bold px-2 py-1.5 hover:bg-indigo-50 rounded-lg" title={t.fixTextTooltip}>
+                      <Wand2 size={13} /><span>{t.fixText}</span>
+                    </button>
+                  </div>
+                </div>
 
-                  <button 
-                    onClick={handleRepairText} 
-                    className="flex items-center space-x-1.5 text-slate-500 hover:text-emerald-600 text-xs font-bold px-2.5 py-1.5 hover:bg-emerald-50 rounded-lg" 
-                    title={t.fixTextTooltip}
-                  >
-                    <Wand2 size={14} />
-                    <span>{t.fixText}</span>
-                  </button>
+                <div>
+                  <div className="brand-label text-[10px] text-slate-400 mb-1">{af ? '3 · Taal' : '3 · Language'}</div>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={handleTranslate} disabled={isTranslating || audioState.isLoading}
+                      className="flex items-center gap-1.5 text-slate-600 hover:text-indigo-700 text-xs font-bold px-2.5 py-1.5 border border-slate-200 hover:bg-indigo-50 rounded-lg" title={af ? 'Vertaal hierdie skyfie' : 'Translate this slide'}>
+                      {isTranslating && !translateAllProgress ? <Loader className="animate-spin" size={13} /> : <ArrowRightLeft size={13} />}<span>{t.translate}</span>
+                    </button>
+                    <button onClick={handleTranslateAll} disabled={isTranslating || audioState.isLoading} data-testid="translate-all"
+                      className="flex items-center gap-1.5 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 text-xs font-bold px-2.5 py-1.5 rounded-lg" title={af ? 'Vertaal al die skyfies' : 'Translate all slides'}>
+                      {translateAllProgress ? <Loader className="animate-spin" size={13} /> : <Languages size={13} />}
+                      <span>{translateAllProgress ? `${translateAllProgress.current}/${translateAllProgress.total}` : (af ? 'Vertaal alles' : 'Translate all')}</span>
+                    </button>
+                  </div>
+                </div>
 
-                  <div className="w-px h-4 bg-slate-200"></div>
-
-                  <button 
-                    onClick={handleTranslate} 
-                    disabled={isTranslating || audioState.isLoading} 
-                    className="flex items-center space-x-1.5 text-slate-500 hover:text-indigo-600 text-xs font-bold px-2.5 py-1.5 hover:bg-indigo-50 rounded-lg"
-                  >
-                    {isTranslating ? <Loader className="animate-spin" size={14} /> : <ArrowRightLeft size={14} />}
-                    <span>{t.translate}</span>
+                <div>
+                  <div className="brand-label text-[10px] text-slate-400 mb-1">{af ? '4 · Skyfies' : '4 · Slides'}</div>
+                  <button onClick={() => setShowBalance(true)} data-testid="balance-open"
+                    className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg border ${pages.some((p) => slideSize(p.text).level === 'toolong') ? 'text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100' : 'text-slate-600 border-slate-200 hover:bg-indigo-50'}`}
+                    title={af ? 'Skuif inhoud wat te veel is na die volgende skyfie' : 'Move content that does not fit on to the next slide'}>
+                    <Scissors size={13} /><span>{af ? 'Balanseer skyfies' : 'Balance slides'}</span>
                   </button>
                 </div>
+              </div>
+
+              {structUndo && (
+                <div className="flex-none bg-indigo-50 border-x border-indigo-100 px-3 py-1.5 flex items-center justify-between gap-2 text-[11px] text-indigo-800" data-testid="undo-bar">
+                  <span className="font-bold">{structUndo.label}</span>
+                  <span className="flex items-center gap-2">
+                    <button onClick={undoStructure} className="flex items-center gap-1 font-bold hover:underline"><Undo2 size={12} /> {af ? 'Ontdoen' : 'Undo'}</button>
+                    <button onClick={() => setStructUndo(null)} className="text-indigo-400 hover:text-indigo-700" aria-label="Dismiss"><X size={12} /></button>
+                  </span>
+                </div>
+              )}
+
+              {/* Every slide at a glance: click to open, the bar shows how full it is, the dots show what is made */}
+              <div className="flex-none bg-slate-50 border-x border-slate-200 px-2 py-1.5 flex items-center gap-1.5 overflow-x-auto custom-scrollbar" data-testid="slide-strip" role="tablist" aria-label={af ? 'Skyfies' : 'Slides'}>
+                {pages.map((p, i) => {
+                  const sz = slideSize(p.text);
+                  const on = i === pageIndex;
+                  const vis = visualsBySlide[p.id];
+                  return (
+                    <button key={p.id} role="tab" aria-selected={on} onClick={() => goToPage(i)}
+                      className={`flex-none w-32 text-left rounded-lg border px-2 py-1.5 transition-colors ${on ? 'bg-white border-indigo-300 shadow-sm' : 'bg-white/60 border-slate-200 hover:bg-white'}`}
+                      title={p.text.trim().slice(0, 140)}>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className={`text-[10px] font-bold ${on ? 'text-indigo-700' : 'text-slate-500'}`}>{i + 1}</span>
+                        <span className="flex items-center gap-1 text-[9px]">
+                          {p.audioData && <span title={af ? 'Klank gemaak' : 'Audio made'}>🔊</span>}
+                          {vis && vis.slideText === p.text && <span title={af ? 'Beelde gemaak' : 'Visuals made'}>✨</span>}
+                          {sz.level === 'toolong' && <span title={af ? 'Te lank' : 'Too long'}>⚠️</span>}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-600 truncate leading-tight mt-0.5">{(i === pageIndex ? text : p.text).trim().split(/\n/)[0].slice(0, 40) || '—'}</div>
+                      <div className="h-1 rounded bg-slate-100 overflow-hidden mt-1"><div className={`h-full ${sz.level === 'toolong' ? 'bg-rose-500' : sz.level === 'long' ? 'bg-amber-400' : 'bg-violet-400'}`} style={{ width: `${Math.min(100, (sz.chars / SLIDE_LIMITS.maxChars) * 100)}%` }} /></div>
+                    </button>
+                  );
+                })}
+                <button onClick={handleAddBlock} className="flex-none w-9 h-12 rounded-lg border border-dashed border-slate-300 text-slate-400 hover:text-indigo-600 hover:border-indigo-300 flex items-center justify-center" title={t.addBlock} aria-label={t.addBlock}><Plus size={14} /></button>
               </div>
 
               {/* Text Area Card */}
@@ -1048,9 +1148,9 @@ const App: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <button onClick={handleDeleteBlock} className="p-1.5 text-slate-300 hover:text-rose-500 rounded-lg transition-colors" title={t.deleteBlock}><Trash2 size={15} /></button>
                     <div className="flex items-center space-x-1 bg-white rounded-lg border border-slate-200 p-0.5 shadow-sm">
-                      <button onClick={() => handlePageChange('prev')} disabled={pageIndex === 0} className="p-1 hover:bg-slate-100 rounded disabled:opacity-20"><ChevronLeft size={14} /></button>
+                      <button onClick={() => handlePageChange('prev')} disabled={pageIndex === 0} className="p-1 hover:bg-slate-100 rounded disabled:opacity-20" aria-label="Previous slide"><ChevronLeft size={14} /></button>
                       <span className="text-[10px] font-bold text-slate-700 w-20 text-center uppercase">{t.block} {pageIndex + 1}/{pages.length}</span>
-                      <button onClick={() => handlePageChange('next')} disabled={pageIndex === pages.length - 1} className="p-1 hover:bg-slate-100 rounded disabled:opacity-20"><ChevronRight size={14} /></button>
+                      <button onClick={() => handlePageChange('next')} disabled={pageIndex === pages.length - 1} className="p-1 hover:bg-slate-100 rounded disabled:opacity-20" aria-label="Next slide"><ChevronRight size={14} /></button>
                       <button onClick={handleAddBlock} className="p-1 hover:bg-indigo-50 text-indigo-600 rounded" title={t.addBlock}><Plus size={14} /></button>
                     </div>
                   </div>
@@ -1062,196 +1162,146 @@ const App: React.FC = () => {
                     value={text} 
                     onChange={(e) => handleTextChange(e.target.value)} 
                     className="absolute inset-0 w-full h-full p-6 resize-none focus:outline-none text-slate-700 leading-relaxed text-base bg-transparent overflow-y-auto custom-scrollbar" 
-                    placeholder="Enter course slide content..." 
+                    placeholder={af ? 'Tik of plak die skyfie se teks...' : 'Enter course slide content...'} 
                     spellCheck={false} 
                   />
                 </div>
 
-                <div className="flex-none px-4 py-2 bg-slate-50 border-t border-slate-100 text-right">
-                  <span className="text-[10px] text-slate-400 font-bold">{text.length} {t.chars}</span>
-                </div>
+                {(() => {
+                  const sz = slideSize(text);
+                  return (
+                    <div className="flex-none px-4 py-2 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2" data-testid="length-meter">
+                      <span className={`text-[10px] font-bold flex items-center gap-1.5 ${sz.level === 'toolong' ? 'text-rose-600' : sz.level === 'long' ? 'text-amber-600' : 'text-slate-400'}`}>
+                        {sz.level === 'toolong' && <AlertCircle size={12} />}
+                        {sz.chars} / {SLIDE_LIMITS.maxChars} {t.chars} · {sz.words} {af ? 'woorde' : 'words'}{sz.seconds ? ` · ≈ ${Math.floor(sz.seconds / 60)}:${String(sz.seconds % 60).padStart(2, '0')}` : ''}
+                        {sz.level === 'toolong' && <span>{af ? '— te lank om te maak' : '— too long to produce'}</span>}
+                      </span>
+                      {sz.level === 'toolong' && (
+                        <button onClick={() => setShowBalance(true)} className="text-[10px] font-bold text-rose-700 hover:underline flex items-center gap-1"><Scissors size={11} /> {af ? 'Balanseer skyfies' : 'Balance slides'}</button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="flex-none h-4 bg-slate-50 border-x border-slate-200 border-b rounded-b-xl shadow-inner"></div>
             </div>
 
-            {/* Right: Realistic Conversational Voice Studio & Generation */}
+            {/* Right: the production line, in order: narrator, audio, visuals */}
             <div className="lg:col-span-5 flex flex-col lg:min-h-0">
-              <div className="lg:flex-1 flex flex-col lg:min-h-0 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 lg:overflow-y-auto custom-scrollbar">
-                
-                <div className="flex-none flex items-center justify-between mb-3">
-                  <div className="flex items-center space-x-3">
-                    <div className="bg-rose-100 p-2 rounded-xl text-rose-500">
-                      <Mic size={20} />
-                    </div>
-                    <div>
-                      <h2 className="text-base font-extrabold text-slate-800 leading-none">{t.voiceStudio}</h2>
-                      <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">{t.voiceStudioSubtitle}</p>
-                    </div>
+              <div className="lg:flex-1 flex flex-col lg:min-h-0 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 lg:overflow-y-auto custom-scrollbar space-y-5">
+
+                <div className="flex-none flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl text-indigo-600 leading-none">{t.voiceStudio}</h2>
+                    <p className="brand-tag text-sm text-slate-400 mt-1">{BRAND.tagline}</p>
                   </div>
-                  <span className="text-[9px] bg-rose-50 text-rose-700 font-black px-2 py-0.5 rounded-full uppercase border border-rose-100">
-                    gemini-3.8-flash-tts
+                  <span className="text-[9px] bg-violet-50 text-violet-700 font-black px-2 py-0.5 rounded-full uppercase border border-violet-100">
+                    {getSelectedVoice().provider === 'elevenlabs' ? 'eleven_v3' : 'gemini-3.8-flash-tts'}
                   </span>
                 </div>
-                
-                {/* Generation & Controls */}
-                <div className="flex-none mb-4 space-y-3 relative">
-                  {currentStep === 4 && <StepPopup step={4} />}
-                  
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center space-x-2 text-[11px] text-slate-500 font-bold uppercase">
-                        <Gauge size={14} />
-                        <span>{t.speed}</span>
-                      </div>
-                      <span className="text-xs font-bold text-indigo-600 bg-white px-2 py-0.5 rounded-lg border border-indigo-100">
-                        {playbackSpeed}x
-                      </span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="0.5" 
-                      max="2" 
-                      step="0.25" 
-                      value={playbackSpeed} 
-                      onChange={(e) => { 
-                        const s = parseFloat(e.target.value); 
-                        setPlaybackSpeed(s); 
-                        if(audioRef.current) audioRef.current.playbackRate = s; 
-                      }} 
-                      className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" 
-                    />
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-3">
-                    {audioState.isLoading || isBatchGenerating || isTranslating ? (
-                      <button 
-                        onClick={stopProcesses} 
-                        className="col-span-2 py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-bold shadow-lg shadow-rose-100 transition-all flex items-center justify-center space-x-2 text-xs"
-                      >
-                        <Square size={14} fill="currentColor" />
-                        <span>{t.stop}</span>
-                      </button>
-                    ) : (
-                      <>
-                        <button 
-                          onClick={handleGenerate} 
-                          disabled={!text} 
-                          className="py-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 disabled:bg-slate-200 text-white rounded-xl font-bold shadow-lg shadow-indigo-100 transition-all flex items-center justify-center space-x-2 text-xs"
-                        >
-                          <Sparkles size={14} />
-                          <span>{t.generateAudio}</span>
-                        </button>
-                        <button 
-                          onClick={handleGenerateAll} 
-                          disabled={!pages.length} 
-                          className="py-3 px-3 rounded-xl border-2 border-indigo-50 text-indigo-700 font-bold hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2 text-xs"
-                        >
-                          <Layers size={14} />
-                          <span>{t.generateAll}</span>
-                        </button>
-                        <button
-                          onClick={() => setShowVisuals(true)}
-                          disabled={!text.trim()}
-                          className="col-span-2 py-2 px-3 rounded-xl border-2 border-violet-100 text-violet-700 font-bold hover:bg-violet-50 disabled:opacity-40 transition-colors flex items-center justify-center gap-2 text-xs"
-                        >
-                          <Wand2 size={14} />
-                          <span>{language === 'af' ? 'Skyfie-beelde' : 'Slide visuals'}</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                  
-                  {isBatchGenerating && (
-                    <div className="bg-indigo-50 rounded-xl p-3 border border-indigo-100 animate-pulse">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-bold text-indigo-700 flex items-center gap-1.5">
-                          <Loader className="animate-spin" size={12} />
-                          {t.generatingBatch}
-                        </span>
-                        <span className="text-[10px] text-indigo-600 font-mono font-bold">
-                          {batchProgress.current} / {batchProgress.total}
-                        </span>
-                      </div>
-                      <div className="w-full bg-indigo-100 rounded-full h-1.5 overflow-hidden">
-                        <div 
-                          className="bg-indigo-600 h-full rounded-full transition-all duration-500" 
-                          style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  )}
-                </div>
 
-                {/* Audio Player Screen */}
-                <div className="flex-none mb-4 bg-slate-900 rounded-2xl p-4 relative overflow-hidden shadow-2xl min-h-[135px] flex flex-col justify-between group">
-                  {currentStep === 5 && <StepPopup step={5} />}
-                  <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-10">
-                    <div className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-lg text-[10px] text-white/90 font-bold tracking-widest uppercase flex items-center gap-1.5">
-                      <span>{getSelectedVoice().label}</span>
-                      {getSelectedVoice().isAfrVariant && (
-                        <span className="text-[8px] bg-emerald-500 text-white px-1 rounded font-black">AFR</span>
-                      )}
-                    </div>
-                    <div className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-lg text-[10px] text-white/90 font-mono font-bold flex items-center gap-1.5">
-                      <span className={audioState.isPlaying ? "animate-pulse text-emerald-400" : "text-slate-500"}>●</span>
-                      {formatTime(audioState.currentTime)} / {formatTime(audioState.duration)}
-                    </div>
-                  </div>
-                  <div className="mt-7 flex-1 flex items-center justify-center opacity-80 group-hover:opacity-100 transition-opacity min-h-[50px]">
-                    <Visualizer analyser={analyserRef.current} isPlaying={audioState.isPlaying} />
-                  </div>
-                  <Controls 
-                    isPlaying={audioState.isPlaying} 
-                    onPlayPause={handlePlayPause} 
-                    onReset={stopAudio} 
-                    onDownload={handleDownload} 
-                    disabled={!audioState.hasAudio || audioState.isLoading} 
-                  />
-                </div>
-                
-                {/* Voice selection: current voice plus pop-up picker */}
-                <div className="flex-none relative">
+                {/* ① Narrator */}
+                <section className="flex-none relative" aria-label={af ? 'Verteller' : 'Narrator'}>
                   {currentStep === 3 && <StepPopup step={3} />}
+                  <div className="brand-label text-[11px] text-slate-500 mb-1.5 flex items-center gap-2"><span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold not-italic" style={{ fontFamily: 'Inter, sans-serif', letterSpacing: 0 }}>1</span>{af ? 'Verteller' : 'Narrator'}</div>
                   {(() => {
                     const sel = getSelectedVoice();
                     const meta = (t.voiceLabels as any)[sel.id] || { label: sel.label, desc: sel.description };
                     return (
-                      <div className="p-3 rounded-xl border-2 border-indigo-100 bg-white">
-                        <div className="flex items-center justify-between mb-2.5">
-                          <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">{t.selectVoice}</span>
-                          <span className="text-[10px] text-slate-400 font-bold">{allVoices.length}</span>
-                        </div>
+                      <div className="p-3 rounded-xl border-2 border-indigo-100 bg-white space-y-3">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-10 h-10 flex-none rounded-full bg-indigo-600 text-white flex items-center justify-center text-sm font-black">
-                            {meta.label[0]}
-                          </div>
+                          <div className="w-10 h-10 flex-none rounded-full bg-indigo-600 text-white flex items-center justify-center text-sm font-black">{meta.label[0]}</div>
                           <div className="min-w-0 flex-1">
                             <div className="text-[13px] font-extrabold text-slate-800 truncate">{meta.label}</div>
                             <div className="text-[10px] text-slate-400 font-bold truncate">{meta.desc}</div>
                           </div>
-                          <button
-                            onClick={() => handleVoicePreview(sel)}
-                            className="flex-none p-2 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-100 transition-colors"
-                            title="Listen to realistic sample"
-                          >
-                            {previewStatus?.id === sel.id && previewStatus?.status === 'loading' ? (
-                              <Loader className="animate-spin" size={15} />
-                            ) : (
-                              <Volume2 size={16} />
-                            )}
+                          <button onClick={() => handleVoicePreview(sel)} className="flex-none p-2 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-100 transition-colors" title="Listen to realistic sample" aria-label="Preview voice">
+                            {previewStatus?.id === sel.id && previewStatus?.status === 'loading' ? <Loader className="animate-spin" size={15} /> : <Volume2 size={16} />}
+                          </button>
+                          <button onClick={() => { setShowVoicePicker(true); if (currentStep === 3) setCurrentStep(4); }} className="flex-none px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors">
+                            {af ? `Kies (${allVoices.length})` : `Choose (${allVoices.length})`}
                           </button>
                         </div>
-                        <button
-                          onClick={() => { setShowVoicePicker(true); if (currentStep === 3) setCurrentStep(4); }}
-                          className="mt-3 w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
-                        >
-                          {language === 'af' ? `Blaai deur stemme (${allVoices.length})` : `Browse voices (${allVoices.length})`}
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-bold uppercase flex-none"><Gauge size={13} /><span>{t.speed}</span></div>
+                          <input type="range" min="0.5" max="2" step="0.25" value={playbackSpeed}
+                            onChange={(e) => { const s2 = parseFloat(e.target.value); setPlaybackSpeed(s2); if (audioRef.current) audioRef.current.playbackRate = s2; }}
+                            className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
+                          <span className="text-xs font-bold text-indigo-600 bg-white px-2 py-0.5 rounded-lg border border-indigo-100">{playbackSpeed}x</span>
+                        </div>
                       </div>
                     );
                   })()}
-                </div>
+                </section>
+
+                {/* ② Audio */}
+                <section className="flex-none relative" aria-label={af ? 'Klank' : 'Audio'}>
+                  {currentStep === 4 && <StepPopup step={4} />}
+                  <div className="brand-label text-[11px] text-slate-500 mb-1.5 flex items-center gap-2"><span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold" style={{ fontFamily: 'Inter, sans-serif', letterSpacing: 0 }}>2</span>{af ? 'Klank van die skyfie' : 'Slide audio'}</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {audioState.isLoading || isBatchGenerating || isTranslating ? (
+                      <button onClick={stopProcesses} className="col-span-2 py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-bold shadow-lg shadow-rose-100 transition-all flex items-center justify-center space-x-2 text-xs">
+                        <Square size={14} fill="currentColor" /><span>{t.stop}</span>
+                      </button>
+                    ) : (
+                      <>
+                        <button onClick={handleGenerate} disabled={!text} className="py-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 disabled:bg-slate-200 text-white rounded-xl font-bold shadow-lg shadow-indigo-100 transition-all flex items-center justify-center space-x-2 text-xs">
+                          <Sparkles size={14} /><span>{t.generateAudio}</span>
+                        </button>
+                        <button onClick={handleGenerateAll} disabled={!pages.length} className="py-3 px-3 rounded-xl border-2 border-indigo-50 text-indigo-700 font-bold hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2 text-xs">
+                          <Layers size={14} /><span>{t.generateAll}</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {isBatchGenerating && (
+                    <div className="mt-3 bg-indigo-50 rounded-xl p-3 border border-indigo-100 animate-pulse">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-bold text-indigo-700 flex items-center gap-1.5"><Loader className="animate-spin" size={12} />{t.generatingBatch}</span>
+                        <span className="text-[10px] text-indigo-600 font-mono font-bold">{batchProgress.current} / {batchProgress.total}</span>
+                      </div>
+                      <div className="w-full bg-indigo-100 rounded-full h-1.5 overflow-hidden"><div className="bg-indigo-600 h-full rounded-full transition-all duration-500" style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}></div></div>
+                    </div>
+                  )}
+
+                  <div className="mt-3 bg-indigo-800 rounded-2xl p-3 relative overflow-hidden shadow-xl min-h-[104px] flex flex-col justify-between group">
+                    {currentStep === 5 && <StepPopup step={5} />}
+                    <div className="absolute top-0 left-0 right-0 p-3 flex justify-between items-start z-10">
+                      <div className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-lg text-[10px] text-white/90 font-bold tracking-widest uppercase flex items-center gap-1.5">
+                        <span>{getSelectedVoice().label}</span>
+                        {getSelectedVoice().isAfrVariant && <span className="text-[8px] bg-emerald-500 text-white px-1 rounded font-black">AFR</span>}
+                      </div>
+                      <div className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-lg text-[10px] text-white/90 font-mono font-bold flex items-center gap-1.5">
+                        <span className={audioState.isPlaying ? "animate-pulse text-emerald-400" : "text-slate-500"}>●</span>
+                        {formatTime(audioState.currentTime)} / {formatTime(audioState.duration)}
+                      </div>
+                    </div>
+                    <div className="mt-6 flex-1 flex items-center justify-center opacity-80 group-hover:opacity-100 transition-opacity min-h-[24px] max-h-[34px] overflow-hidden">
+                      <Visualizer analyser={analyserRef.current} isPlaying={audioState.isPlaying} />
+                    </div>
+                    <Controls isPlaying={audioState.isPlaying} onPlayPause={handlePlayPause} onReset={stopAudio} onDownload={handleDownload} disabled={!audioState.hasAudio || audioState.isLoading} />
+                  </div>
+                </section>
+
+                {/* ③ Visuals: two separate productions */}
+                <section className="flex-none" aria-label={af ? 'Beelde' : 'Visuals'}>
+                  <div className="brand-label text-[11px] text-slate-500 mb-1.5 flex items-center gap-2"><span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold" style={{ fontFamily: 'Inter, sans-serif', letterSpacing: 0 }}>3</span>{af ? 'Skyfie-beelde' : 'Slide visuals'}</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button onClick={() => setShowVisuals(true)} disabled={!text.trim()} data-testid="open-slide-visuals"
+                      className="text-left p-3 rounded-xl border-2 border-violet-100 hover:bg-violet-50 disabled:opacity-40 transition-colors">
+                      <div className="flex items-center gap-2 text-violet-700 font-bold text-xs"><Wand2 size={14} />{af ? 'Hierdie skyfie' : 'This slide'}</div>
+                      <div className="text-[10px] text-slate-500 leading-snug mt-1">{af ? `Beelde en stem vir skyfie ${pageIndex + 1}, met die gesels-redigeerder.` : `Visuals and voice for slide ${pageIndex + 1}, with the chat editor.`}</div>
+                    </button>
+                    <button onClick={() => setShowAllVisuals(true)} disabled={!pages.some((p) => p.text.trim())} data-testid="open-all-visuals"
+                      className="text-left p-3 rounded-xl border-2 border-indigo-100 hover:bg-indigo-50 disabled:opacity-40 transition-colors">
+                      <div className="flex items-center gap-2 text-indigo-700 font-bold text-xs"><Presentation size={14} />{af ? 'Alle skyfies in een html' : 'All slides in one html'}</div>
+                      <div className="text-[10px] text-slate-500 leading-snug mt-1">
+                        {(() => { const made = pages.filter((p) => { const v = visualsBySlide[p.id]; return v && v.slideText === p.text; }).length; return af ? `${made} van ${pages.length} skyfies klaar. Een les met al die skyfies.` : `${made} of ${pages.length} slides made. One lesson with every slide.`; })()}
+                      </div>
+                    </button>
+                  </div>
+                </section>
 
               </div>
             </div>
@@ -1287,6 +1337,20 @@ const App: React.FC = () => {
       )}
 
       {showLibrary && <LibraryModal language={language} onClose={() => setShowLibrary(false)} />}
+
+      {showBalance && <BalanceModal pages={pages} language={language} onApply={applyBalance} onClose={() => setShowBalance(false)} />}
+
+      {showAllVisuals && (
+        <AllSlidesModal
+          pages={pages}
+          language={language}
+          voice={getSelectedVoice()}
+          entries={visualsBySlide}
+          onEntry={(pageId, entry) => setVisualsBySlide((prev) => ({ ...prev, [pageId]: entry }))}
+          onBalance={() => { setShowAllVisuals(false); setShowBalance(true); }}
+          onClose={() => setShowAllVisuals(false)}
+        />
+      )}
 
       {showVisuals && (
         <VisualsModal

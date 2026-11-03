@@ -1,13 +1,16 @@
 import playerCss from '../lesson-player/player.css?raw';
 import playerBody from '../lesson-player/player-body.html?raw';
 import playerJs from '../lesson-player/player.js?raw';
+import { brandFontCss, brandPlayerCss, brandBarHtml, brandFootHtml } from '../brand/brand';
 
 /** Lesson data produced by the model (see netlify/lib/lessonPrompt.mjs for the schema). */
 export interface LessonData {
   lang?: string;
   title?: string;
   currency?: string;
-  beats?: { title?: string; caption?: string; narration?: string[]; [k: string]: unknown }[];
+  /** false leaves the Get Sharp Academy branding out of the page */
+  brand?: boolean;
+  beats?: { title?: string; caption?: string; narration?: string[]; /** section label shown in the navigation (a slide of a multi-slide lesson) */ group?: string; [k: string]: unknown }[];
   [k: string]: unknown;
 }
 
@@ -57,10 +60,11 @@ export function buildPlayerHtml(data: LessonData, audio: Record<string, string>)
   const safe = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
   const lesson = { ...data, embeddedAudioOnly: true };
   const title = String(data.title || 'Explainer').replace(/[<>&"]/g, '');
+  const brand = data.brand !== false;
   return (
     `<!DOCTYPE html><html lang="${data.lang === 'af' ? 'af' : 'en'}"><head><meta charset="UTF-8">` +
     `<meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${title}</title>` +
-    `<style>${playerCss}</style></head><body>${playerBody}` +
+    `<style>${playerCss}${brand ? brandFontCss() + brandPlayerCss() : ''}</style></head><body>${brand ? brandBarHtml() : ''}${playerBody}${brand ? brandFootHtml() : ''}` +
     `<script id="narrationAudio" type="application/json">${safe(audio)}</script>` +
     `<script id="lessonData" type="application/json">${safe(lesson)}</script>` +
     `<script>${playerJs.replace(/<\/script/gi, '<\\/script')}</script></body></html>`
