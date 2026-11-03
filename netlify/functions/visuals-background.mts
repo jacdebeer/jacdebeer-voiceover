@@ -2,7 +2,7 @@
 // It has no user session. The job id is an unguessable UUID that api.mts created for a signed-in user.
 import { getStore } from '@netlify/blobs';
 // @ts-ignore - plain JS module
-import { repairSpokenLines, dedupeSelf, addDefaultIcons } from '../lib/lessonRepair.mjs';
+import { repairSpokenLines, dedupeSelf, addDefaultIcons, stripIllustrationNotes, tidyApostrophes } from '../lib/lessonRepair.mjs';
 import { VISUALS_STORE, VISUALS_MAX_OUTPUT_TOKENS, buildSystem, buildUserText } from '../lib/visualsJob.mts';
 import { callMessages } from '../lib/anthropic.mts';
 
@@ -47,6 +47,9 @@ export default async (req: Request): Promise<Response> => {
     // the model sometimes speaks a sentence twice (caption and narration); keep each script sentence once
     const { removed } = job.input.mode === 'explain' ? dedupeSelf(data) : repairSpokenLines(data, job.input.text);
     if (removed.length) console.log(`Removed ${removed.length} repeated spoken line(s) from the lesson`);
+    const notes = stripIllustrationNotes(data);
+    if (notes) console.log(`Removed ${notes} illustration note(s)`);
+    tidyApostrophes(data);
     const iconsAdded = addDefaultIcons(data);
     if (iconsAdded) console.log(`Added ${iconsAdded} default emoji icon(s)`);
     data.lang = job.input.lang;
