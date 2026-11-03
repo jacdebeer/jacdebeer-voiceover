@@ -21,10 +21,11 @@ body{font-family:var(--font);background:#EEF1F6;color:var(--ink);line-height:1.5
 .stage h2{font-size:1.05rem;margin-bottom:2px}
 .stage h2 .num{color:var(--accent);margin-right:8px}
 .stageNote{font-size:.8rem;color:var(--ink2);margin-bottom:16px}
-.block{margin:18px 0}
-/* a wide table (a six-column journal, five T-accounts) scrolls sideways inside its block instead of being cut off */
-.block{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:3px}
-.block:first-of-type{margin-top:6px}
+.block{margin:4px 0}
+/* a wide table (a six-column journal, five T-accounts) scrolls sideways inside its block instead of being cut off;
+   the padding keeps what pokes out of a box (card badges, shadows, the pop animation) from being clipped by that */
+.block{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:16px 8px 8px}
+.block:first-of-type{margin-top:0}
 .blockTitle{font-size:.82rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--ink2);margin-bottom:7px}
 table{border-collapse:collapse;width:100%;background:#fff;font-size:.8rem;table-layout:auto}
 caption{caption-side:top;text-align:left;font-weight:800;font-size:.86rem;padding:0 0 6px}
@@ -46,6 +47,42 @@ tr.now > td:first-child{box-shadow:inset 4px 0 0 var(--accent)}
 @keyframes stageIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 .cap.enter{animation:capIn .4s ease both}
 @keyframes capIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* each kind of element arrives in its own way */
+.card2.pop{animation:cardIn .62s cubic-bezier(.2,1.25,.4,1) both}
+@keyframes cardIn{0%{opacity:0;transform:translateY(18px) scale(.86) rotate(-1.2deg)}100%{opacity:1;transform:none}}
+.card2.pop .badge{animation:badgeIn .5s .25s cubic-bezier(.3,1.6,.5,1) both}
+@keyframes badgeIn{from{opacity:0;transform:translateY(8px) scale(.4)}to{opacity:1;transform:none}}
+.ftile.pop{animation:tileIn .55s cubic-bezier(.2,.9,.3,1.1) both}
+@keyframes tileIn{from{opacity:0;transform:translateX(-26px) scale(.92)}to{opacity:1;transform:none}}
+.ftile.pop .fop{animation:opIn .4s .15s both}
+@keyframes opIn{from{opacity:0;transform:scale(2.2)}to{opacity:1;transform:none}}
+.flow .step.pop{animation:stepIn .55s cubic-bezier(.2,.9,.3,1.1) both}
+@keyframes stepIn{from{opacity:0;transform:translateX(-34px)}to{opacity:1;transform:none}}
+.flow .step.pop .arw{animation:arrowPush .8s .1s ease-out both}
+@keyframes arrowPush{0%{transform:translateX(-14px);opacity:0}60%{transform:translateX(5px);opacity:1}100%{transform:none}}
+.chg.pop{animation:chgIn .55s cubic-bezier(.2,.9,.3,1.1) both}
+@keyframes chgIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.chg.up.pop .arrow{animation:arrowUp 1s .2s ease-out both}
+.chg.down.pop .arrow{animation:arrowDown 1s .2s ease-out both}
+@keyframes arrowUp{0%{transform:translateY(16px);opacity:0}50%{transform:translateY(-6px);opacity:1}100%{transform:none}}
+@keyframes arrowDown{0%{transform:translateY(-16px);opacity:0}50%{transform:translateY(6px);opacity:1}100%{transform:none}}
+.callout.pop{animation:calloutIn .55s cubic-bezier(.2,.8,.2,1) both}
+@keyframes calloutIn{from{opacity:0;transform:translateX(-18px);border-left-width:0}to{opacity:1;transform:none}}
+.doc.pop{animation:docDrop .7s cubic-bezier(.2,.9,.3,1.05) both;transform-origin:50% 0}
+@keyframes docDrop{from{opacity:0;transform:translateY(-26px) rotate(-2.5deg)}to{opacity:1;transform:none}}
+/* what has just appeared glows once, then settles */
+.card2.now,.ftile.now .fbox,.chg.now,.flow .step.now,.callout.now,.doc.now{animation-name:none}
+.card2.now{box-shadow:0 0 0 0 rgba(135,192,205,.0);animation:glowOnce 1.6s ease-out 1}
+.ftile.now .fbox,.chg.now,.flow .step.now,.callout.now,.doc.now{animation:glowOnce 1.6s ease-out 1}
+@keyframes glowOnce{0%{box-shadow:0 0 0 0 rgba(135,192,205,.9)}70%{box-shadow:0 0 0 12px rgba(135,192,205,0)}100%{box-shadow:0 0 0 0 rgba(135,192,205,0)}}
+.card2.now .ico,.chg.now .ico{animation:icoHop .9s .3s ease-out 1}
+@keyframes icoHop{0%,100%{transform:none}35%{transform:translateY(-6px) scale(1.15)}65%{transform:translateY(0) scale(.96)}}
+/* money flows into the cell: the figures are counted up by the script */
+td.num.count{animation:numFlash 1s ease-out}
+@keyframes numFlash{0%{color:var(--accent)}100%{color:inherit}}
+.cap .w{display:inline-block;opacity:0;transform:translateY(4px);animation:wordIn .35s ease forwards}
+@keyframes wordIn{to{opacity:1;transform:none}}
+.bar i{transition:width .45s cubic-bezier(.2,.8,.2,1)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 .docNo{font-family:ui-monospace,Consolas,monospace;font-weight:700}
 .doc{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px;max-width:560px;box-shadow:0 1px 0 rgba(0,0,0,.05)}
@@ -107,15 +144,17 @@ table.t tr.tot td.num{border-bottom:3px double var(--ink)}
 .formula{display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:center;margin:6px 0}
 .ftile{display:flex;align-items:center;gap:10px}
 .ftile .fop{font-size:2.1rem;font-weight:800;color:var(--ink2)}
-.ftile .fbox{border-radius:14px;padding:16px 24px;text-align:center;min-width:140px;border:2px solid;box-shadow:0 2px 0 rgba(0,0,0,.06)}
-.ftile .fbox b{display:block;font-size:1.5rem;letter-spacing:-.01em}
+.ftile .fbox{border-radius:14px;padding:14px 20px;text-align:center;min-width:130px;max-width:100%;border:2px solid;box-shadow:0 2px 0 rgba(0,0,0,.06)}
+.ftile .fbox b{display:block;font-size:clamp(1.05rem,2.4vw,1.5rem);letter-spacing:-.01em}
 .ftile .fbox i{display:block;font-style:normal;font-size:.78rem;margin-top:4px;opacity:.8}
 .ftile.blue .fbox{background:#EFF4FF;border-color:#93B4FF;color:#1E3A8A}
 .ftile.green .fbox{background:#ECFDF5;border-color:#6EE7B7;color:#065F46}
 .ftile.amber .fbox{background:#FFFBEB;border-color:#FCD34D;color:#92400E}
 .ftile.red .fbox{background:#FEF2F2;border-color:#FCA5A5;color:#991B1B}
 /* cards */
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:14px}
+/* long words and names wrap inside their box instead of poking out of it */
+.card2,.chg,.flow .step,.ftile .fbox,.callout{min-width:0;overflow-wrap:anywhere;hyphens:auto}
 .card2{position:relative;border-radius:14px;padding:16px 18px;border:2px solid;box-shadow:0 2px 0 rgba(0,0,0,.05)}
 .card2 b{display:block;font-size:1.1rem;margin-bottom:4px}
 .card2 > span:not(.badge){display:block;font-size:.85rem;line-height:1.45}

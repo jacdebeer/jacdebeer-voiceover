@@ -5,7 +5,6 @@ import { SYSTEM, RECORDING_RULES, LEDGER_RULE, LEVEL_GUIDES } from './lessonProm
 import { afrikaansGlossaryPrompt } from './afrikaansTerms.mjs';
 
 export const VISUALS_STORE = 'visual-jobs';
-export const VISUALS_MODEL = 'claude-haiku-5-5';
 export const VISUALS_MAX_OUTPUT_TOKENS = 32000;
 
 export type Mode = 'read' | 'explain';
@@ -25,7 +24,8 @@ const SLIDE_TEXT_RULE = [
   '   - Use as many beats as the script needs (1 to 7). Do not add a beat that has no script sentence behind it.',
   '   - Use ONLY the figures, names, dates and document numbers given in the script (rule E0). Put numbers in the blocks exactly as the script states them.',
   '   - Omit "quiz" entirely: it would be silent.',
-  '   - VISUALS MUST CARRY THE LESSON. Every beat needs at least one visual block that is not "text". Use "text" only for one short rule or note. When the slide explains a concept and gives no amounts, still draw it: "formula" for an equation (for example Bates = Eienaarsbelang + Laste), "cards" for categories or definitions, "change" for what goes up or down, "flow" for steps, "equation" or "t_accounts" when the slide gives figures.',
+  '   - VISUALS MUST CARRY THE LESSON. Every beat needs at least one visual block that is not "text". Use "text" only for one short rule or note. Do not build a lesson only from "cards": cards are for a real list of categories or definitions, at most two beats in a lesson. Mix the block types: "formula" for an equation (for example Bates = Eienaarsbelang + Laste), "change" for what goes up or down, "flow" for steps, "equation", "t_accounts", "journal" and "source_document" for anything about accounts and entries.',
+  '   - ACCOUNT ILLUSTRATIONS (the exception to "use only the given figures", for the visuals only). Whenever the script explains an account, says which account is debited or credited, says on which side an account increases, or explains a closing or appropriation entry, DRAW IT: a "t_accounts" block for each account it names, with the debit and the credit side, and a "journal" block when an entry is described. The script gives no amounts for this, so use simple round illustrative figures (for example 60 000), keep them consistent between the journal, the T-accounts and any "equation" block, and add one "text" block with tone "warn" and the heading "Illustrasie" (or "Illustration") saying the figures are only an example. The narration stays exactly the script and must never read these figures. Every slide that is about the accounts of a company needs at least two beats with a T-account.',
   '   - Everything on screen is revealed one element at a time, in step with the voice. Aim for one narration entry per revealed element (each formula part, card, change item, flow step, table row), and keep each beat to 2 to 5 revealed elements so the pace stays watchable.',
 ].join('\n');
 
@@ -50,9 +50,15 @@ const EXPLAIN_RULE = [
   '   - Omit "quiz" entirely: it would be silent.',
 ].join('\n');
 
+// Text must fit the boxes it is drawn in.
+const FIT_RULE = [
+  '',
+  'J. TEXT MUST FIT ITS BOX. Cards: "label" at most 4 words, "text" at most 14 words. Change items: "label" at most 5 words, "note" at most 8 words. Flow steps: "label" at most 4 words, "text" at most 14 words. Formula parts: "text" at most 3 words, "sub" at most 6 words. Text blocks: "heading" at most 5 words, "body" at most 30 words. Beat titles at most 6 words. Account names in T-accounts and column labels at most 3 words (use the standard short name). Put the detail in the narration, not on the screen. Use at most 4 cards, 5 flow steps, 5 formula parts and 6 change items per block; split a bigger list over two beats.',
+].join('\n');
+
 export function buildSystem(lang: 'en' | 'af' = 'en', mode: Mode = 'read'): string {
   const body = mode === 'explain' ? SYSTEM + '\n' + EXPLAIN_RULE : SYSTEM + '\n' + SLIDE_TEXT_RULE;
-  return body + '\n' + ICON_RULE + (lang === 'af' ? '\n\n' + afrikaansGlossaryPrompt() : '');
+  return body + '\n' + ICON_RULE + FIT_RULE + (lang === 'af' ? '\n\n' + afrikaansGlossaryPrompt() : '');
 }
 
 export function buildUserText(opts: { text: string; lang: 'en' | 'af'; level: Level; currency: string; mode?: Mode }): string {

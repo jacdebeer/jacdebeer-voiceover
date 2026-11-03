@@ -107,7 +107,7 @@ export const LessonChat: React.FC<Props> = ({ af, lesson, lang, mode, busy, canU
           </div>
         )}
         {items.map((it) => (
-          <div key={it.id} className={it.role === 'user' ? 'flex justify-end' : 'flex'}>
+          <div key={it.id} className={`anim-fade-up ${it.role === 'user' ? 'flex justify-end' : 'flex'}`}>
             <div className={`max-w-[92%] rounded-xl px-3 py-2 text-[11px] leading-snug whitespace-pre-wrap ${it.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
               {it.text}
               {it.proposal && <ProposalCard af={af} timeline={timeline} item={it} onApply={() => apply(it)} onDiscard={() => setItems((cur) => cur.map((i) => (i.id === it.id ? { ...i, state: 'discarded' } : i)))} applying={applyingId === it.id} disabled={disabled} />}

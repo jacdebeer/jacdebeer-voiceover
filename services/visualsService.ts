@@ -11,7 +11,7 @@ export type VisualsMode = 'read' | 'explain';
 export type VisualsLevel = 'g8' | 'g9' | 'g10' | 'g11' | 'g12' | 'univ';
 
 const POLL_MS = 2000;
-const POLL_LIMIT = 150; // 5 minutes
+const POLL_LIMIT = 240; // 8 minutes
 
 /** Asks the server for slide visuals built around the slide text, then waits for the result. */
 export async function generateVisuals(
@@ -38,7 +38,7 @@ export async function generateVisuals(
     if (body.status === 'done') return body.data as LessonData;
     if (body.status === 'error') throw new Error(body.error || 'The model returned an error.');
   }
-  throw new Error('Timed out after 5 minutes. Try again.');
+  throw new Error('Timed out after 8 minutes. Try again.');
 }
 
 export interface NarrationReport {

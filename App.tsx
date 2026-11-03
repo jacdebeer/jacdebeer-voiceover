@@ -1094,7 +1094,7 @@ const App: React.FC = () => {
               </div>
 
               {structUndo && (
-                <div className="flex-none bg-indigo-50 border-x border-indigo-100 px-3 py-1.5 flex items-center justify-between gap-2 text-[11px] text-indigo-800" data-testid="undo-bar">
+                <div className="flex-none bg-indigo-50 border-x border-indigo-100 px-3 py-1.5 flex items-center justify-between gap-2 text-[11px] text-indigo-800 anim-slide-down" data-testid="undo-bar">
                   <span className="font-bold">{structUndo.label}</span>
                   <span className="flex items-center gap-2">
                     <button onClick={undoStructure} className="flex items-center gap-1 font-bold hover:underline"><Undo2 size={12} /> {af ? 'Ontdoen' : 'Undo'}</button>
@@ -1110,8 +1110,8 @@ const App: React.FC = () => {
                   const on = i === pageIndex;
                   const vis = visualsBySlide[p.id];
                   return (
-                    <button key={p.id} role="tab" aria-selected={on} onClick={() => goToPage(i)}
-                      className={`flex-none w-32 text-left rounded-lg border px-2 py-1.5 transition-colors ${on ? 'bg-white border-indigo-300 shadow-sm' : 'bg-white/60 border-slate-200 hover:bg-white'}`}
+                    <button key={p.id} role="tab" aria-selected={on} onClick={() => goToPage(i)} style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
+                      className={`anim-fade-up flex-none w-32 text-left rounded-lg border px-2 py-1.5 transition-all ${on ? 'bg-white border-indigo-300 shadow-sm' : 'bg-white/60 border-slate-200 hover:bg-white'}`}
                       title={p.text.trim().slice(0, 140)}>
                       <div className="flex items-center justify-between gap-1">
                         <span className={`text-[10px] font-bold ${on ? 'text-indigo-700' : 'text-slate-500'}`}>{i + 1}</span>
@@ -1202,7 +1202,7 @@ const App: React.FC = () => {
                 </div>
 
                 {/* ① Narrator */}
-                <section className="flex-none relative" aria-label={af ? 'Verteller' : 'Narrator'}>
+                <section className="flex-none relative anim-fade-up" aria-label={af ? 'Verteller' : 'Narrator'}>
                   {currentStep === 3 && <StepPopup step={3} />}
                   <div className="brand-label text-[11px] text-slate-500 mb-1.5 flex items-center gap-2"><span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold not-italic" style={{ fontFamily: 'Inter, sans-serif', letterSpacing: 0 }}>1</span>{af ? 'Verteller' : 'Narrator'}</div>
                   {(() => {
@@ -1236,7 +1236,7 @@ const App: React.FC = () => {
                 </section>
 
                 {/* ② Audio */}
-                <section className="flex-none relative" aria-label={af ? 'Klank' : 'Audio'}>
+                <section className="flex-none relative anim-fade-up" style={{ animationDelay: '70ms' }} aria-label={af ? 'Klank' : 'Audio'}>
                   {currentStep === 4 && <StepPopup step={4} />}
                   <div className="brand-label text-[11px] text-slate-500 mb-1.5 flex items-center gap-2"><span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold" style={{ fontFamily: 'Inter, sans-serif', letterSpacing: 0 }}>2</span>{af ? 'Klank van die skyfie' : 'Slide audio'}</div>
                   <div className="grid grid-cols-2 gap-3">
@@ -1285,7 +1285,7 @@ const App: React.FC = () => {
                 </section>
 
                 {/* ③ Visuals: two separate productions */}
-                <section className="flex-none" aria-label={af ? 'Beelde' : 'Visuals'}>
+                <section className="flex-none anim-fade-up" style={{ animationDelay: '140ms' }} aria-label={af ? 'Beelde' : 'Visuals'}>
                   <div className="brand-label text-[11px] text-slate-500 mb-1.5 flex items-center gap-2"><span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold" style={{ fontFamily: 'Inter, sans-serif', letterSpacing: 0 }}>3</span>{af ? 'Skyfie-beelde' : 'Slide visuals'}</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button onClick={() => setShowVisuals(true)} disabled={!text.trim()} data-testid="open-slide-visuals"

@@ -84,6 +84,24 @@
       h1, h2, h3 { font-family: 'Editorial Today', 'Playfair Display', Georgia, serif !important; font-weight: 400 !important; letter-spacing: 0 !important; }
       .brand-label { font-family: 'Antonio', 'Arial Narrow', sans-serif !important; font-weight: 300 !important; letter-spacing: 0.075em !important; text-transform: uppercase; }
       .brand-tag { font-family: 'Antonio', 'Arial Narrow', sans-serif !important; font-weight: 200 !important; letter-spacing: 0.075em !important; }
+
+      /* motion: windows arrive, lists fade up one after the other, buttons respond to a press */
+      @keyframes backdropIn { from { opacity: 0 } to { opacity: 1 } }
+      @keyframes popIn { from { opacity: 0; transform: translateY(16px) scale(.97) } to { opacity: 1; transform: none } }
+      @keyframes fadeUp { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+      @keyframes slideDown { from { opacity: 0; transform: translateY(-8px) } to { opacity: 1; transform: none } }
+      @keyframes checkPop { 0% { transform: scale(.3); opacity: 0 } 60% { transform: scale(1.25); opacity: 1 } 100% { transform: scale(1) } }
+      @keyframes shimmerBar { from { background-position: 200% 0 } to { background-position: -200% 0 } }
+      .anim-backdrop { animation: backdropIn .2s ease both }
+      .anim-pop { animation: popIn .3s cubic-bezier(.2,.9,.3,1.1) both }
+      .anim-fade-up { animation: fadeUp .38s cubic-bezier(.2,.8,.2,1) both }
+      .anim-slide-down { animation: slideDown .26s ease both }
+      .anim-check { animation: checkPop .45s cubic-bezier(.3,1.5,.5,1) both }
+      .anim-shimmer { background-image: linear-gradient(100deg, rgba(255,255,255,0) 30%, rgba(255,255,255,.55) 50%, rgba(255,255,255,0) 70%); background-size: 200% 100%; animation: shimmerBar 1.6s linear infinite }
+      button { transition: background-color .15s, color .15s, border-color .15s, box-shadow .18s, transform .12s, opacity .15s }
+      button:not(:disabled):active { transform: scale(.97) }
+      [role="tab"]:hover { transform: translateY(-1px) }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important } }
       /* Custom scrollbar for text area */
       .custom-scrollbar::-webkit-scrollbar {
         width: 8px;

@@ -1,3 +1,4 @@
+import { voiceViaJob, LONG_TAKE_CHARS } from './voiceJob';
 import { VoiceName, VoiceOption } from "../types";
 import { stripArtifacts, bytesToBase64, normalizeLoudness, downsampleTo16k } from "../utils/audioClean";
 import { decodeBase64 } from "../utils/audioUtils";
@@ -34,6 +35,13 @@ export async function generateSpeech(
 ): Promise<string> {
   if (!text || !text.trim()) {
     throw new Error("Text cannot be empty");
+  }
+
+  // A whole slide outlasts one synchronous request (a 504 after about 26 seconds) and is too large to answer with as raw audio:
+  // an ElevenLabs text this long is voiced as a background job, which keeps a slide one continuous take.
+  if (provider === 'elevenlabs' && text.trim().length > LONG_TAKE_CHARS) {
+    const pcm = await voiceViaJob({ text: text.trim(), voiceName: String(voiceName), isAfrikaans, attempt, pronunciations });
+    return bytesToBase64(normalizeLoudness(pcm));
   }
 
   const response = await fetch("/api/tts", {

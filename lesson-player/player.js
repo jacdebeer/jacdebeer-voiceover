@@ -423,7 +423,9 @@ function renderBeat(){
   layoutBeat(b);
   si = showAll ? steps.length : 0;
   paint();
-  document.getElementById('pCap').textContent = b.caption || '';
+  var capBox = document.getElementById('pCap');
+  if(REDUCED || !b.caption){ capBox.textContent = b.caption || ''; }
+  else { capBox.innerHTML = '<span>' + String(b.caption).split(/(\s+)/).map(function(w, i){ return /^\s+$/.test(w) ? w : '<span class="w" style="animation-delay:' + Math.min(1.4, i * 0.022) + 's">' + esc(w) + '</span>'; }).join('') + '</span>'; }
   /* beat entrance: restart the CSS animation on the stage and the caption bar */
   var capEl = document.getElementById('pCap');
   [st, capEl].forEach(function(n){ n.classList.remove('enter'); void n.offsetWidth; n.classList.add('enter'); });
@@ -439,14 +441,39 @@ function paint(){
   clockPaint();
 }
 
+
+/* figures in a row that has just appeared are counted up, like money arriving; the text is put back exactly afterwards */
+var REDUCED = false;
+try { REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch(e){}
+function countUp(root){
+  if(REDUCED) return;
+  var cells = root.matches && root.matches('td.num') ? [root] : Array.prototype.slice.call(root.querySelectorAll('td.num'));
+  cells.forEach(function(c){
+    var orig = c.textContent;
+    if(!/^\(?[\d\s,.  ]+\)?$/.test(orig.trim())) return;
+    var neg = /^\(/.test(orig.trim());
+    var target = parseFloat(orig.trim().replace(/[()\s\u00A0\u202F]/g, '').replace(',', '.'));   /* fmt writes 48 000,00 */
+    if(!isFinite(target) || target === 0) return;
+    var t0 = null, dur = 750;
+    c.classList.add('count');
+    function frame(ts){
+      if(t0 === null) t0 = ts;
+      var k = Math.min(1, (ts - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      c.textContent = k < 1 ? fmt((neg ? -1 : 1) * target * e, '') : orig;
+      if(k < 1) requestAnimationFrame(frame); else setTimeout(function(){ c.classList.remove('count'); }, 900);
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
 function stepFwd(){
   if(si < steps.length){
     var g = groups[gIndex()] || {from:si, to:si + 1};
     steps.forEach(function(x){ x.classList.remove('now'); });
     var shown = steps.slice(g.from, g.to);
     si = g.to;
-    shown.forEach(function(r){ r.classList.remove('hide'); r.classList.add('pop', 'now'); });
-    setTimeout(function(){ shown.forEach(function(r){ r.classList.remove('pop'); }); }, 620);
+    shown.forEach(function(r){ r.classList.remove('hide'); r.classList.add('pop', 'now'); countUp(r); });
+    setTimeout(function(){ shown.forEach(function(r){ r.classList.remove('pop'); }); }, 900);
     paint();
     return true;
   }
