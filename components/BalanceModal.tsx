@@ -34,8 +34,8 @@ export const BalanceModal: React.FC<Props> = ({ pages, language, onApply, onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4" role="dialog" aria-label={af ? 'Balanseer skyfies' : 'Balance slides'}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4 anim-backdrop" role="dialog" aria-label={af ? 'Balanseer skyfies' : 'Balance slides'}>
+      <div className="anim-pop bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
           <div>
             <h2 className="text-lg text-indigo-600 flex items-center gap-2"><Scissors size={16} /> {af ? 'Balanseer skyfies' : 'Balance slides'}</h2>

@@ -108,8 +108,8 @@ export const LibraryModal: React.FC<Props> = ({ language, onClose }) => {
   const sel = useMemo(() => lessons?.find((l) => l.id === selected) ?? null, [lessons, selected]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4 anim-backdrop">
+      <div className="anim-pop bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <Library size={16} className="text-indigo-600" />

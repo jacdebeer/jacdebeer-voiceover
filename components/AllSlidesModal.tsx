@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Layers, Loader, Download, Film, Save, AlertCircle, CheckCircle2, Wand2, Volume2, Scissors, Clock3 } from 'lucide-react';
+import { X, Layers, Loader, Download, Save, AlertCircle, CheckCircle2, Wand2, Volume2, Scissors, Clock3, Maximize2, Minimize2 } from 'lucide-react';
 import { CoursePage, VoiceOption } from '../types';
 import { LessonData, buildPlayerHtml } from '../services/lessonPlayer';
 import { produceSlide, autoMode, VisualsLevel, VisualsMode } from '../services/visualsService';
 import { mergeLessons, mergeAudio } from '../services/lessonMerge';
-import { buildHyperframesZip } from '../services/hyperframesExport';
 import { compressAudio, saveLesson } from '../services/libraryService';
 import { isAfrikaansText } from '../utils/language';
 import { slideSize, SLIDE_LIMITS } from '../utils/slideBalance';
 import { VisualsEntry } from './VisualsModal';
+import { useFullscreen } from '../utils/useFullscreen';
 
 interface Props {
   pages: CoursePage[];
@@ -32,11 +32,13 @@ const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).
 
 export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entries, onEntry, onBalance, onClose }) => {
   const af = language === 'af';
+  const { ref: winRef, full, toggle: toggleFull } = useFullscreen<HTMLDivElement>();
   const [level, setLevel] = useState<VisualsLevel>('univ');
   const [currency, setCurrency] = useState('R');
   const [modeChoice, setModeChoice] = useState<'auto' | VisualsMode>('auto');
   const [brand, setBrand] = useState(() => { try { return localStorage.getItem('brand-on') !== '0'; } catch { return true; } });
-  const [title, setTitle] = useState(af ? 'Alle skyfies' : 'All slides');
+  // the words inside the finished lesson follow the language of the lesson, not the language of this window
+  const [titleText, setTitleText] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [now, setNow] = useState<{ index: number; phase: 'visuals' | 'voice'; sub: string; done: number; total: number } | null>(null);
   const [errors, setErrors] = useState<Record<number, string>>({});
@@ -52,7 +54,7 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
     if (!p.text.trim()) return 'empty';
     if (slideSize(p.text).level === 'toolong') return 'toolong';
     const e = entries[p.id];
-    if (e && e.slideText === p.text && e.lang === langFor(p) && (e.mode ?? 'read') === modeFor(p)) return e.voiceId === voice.id ? 'ready' : 'revoice';
+    if (e && e.slideText === p.text && e.lang === langFor(p) && (e.mode ?? 'read') === modeFor(p)) return e.voiceId === voice.id && e.report?.mode !== 'lines' ? 'ready' : 'revoice';
     return 'todo';
   };
   const statuses = pages.map(statusOf);
@@ -109,11 +111,16 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
   const [built, setBuilt] = useState<{ html: string; bytes: number; included: number; skipped: number; key: string } | null>(null);
   const [building, setBuilding] = useState(false);
   const ready = pages.map((p, i) => ({ p, i, e: entries[p.id], ok: statuses[i] === 'ready' || statuses[i] === 'revoice' })).filter((x) => x.ok && x.e);
-  const key = [title, brand, ...ready.map((x) => `${x.p.id}:${x.e.slideText.length}:${x.e.voiceId}:${Object.keys(x.e.audio).length}`)].join('|');
+  // the language of the lesson itself (what the model wrote), not of this window
+  const firstLang = ready[0]?.e.data.lang;
+  const lessonLang: 'en' | 'af' = firstLang === 'af' || firstLang === 'en' ? firstLang : ready[0]?.e.lang ?? language;
+  const defaultTitle = lessonLang === 'af' ? 'Alle skyfies' : 'All slides';
+  const title = titleText ?? defaultTitle;
+  const key = [title, brand, lessonLang, ...ready.map((x) => `${x.p.id}:${x.e.slideText.length}:${x.e.voiceId}:${Object.keys(x.e.audio).length}`)].join('|');
   const combined = useMemo(() => {
     if (!ready.length) return null;
-    const label = (i: number) => `${af ? 'Skyfie' : 'Slide'} ${i + 1}`;
-    const data: LessonData = mergeLessons(ready.map((x) => ({ label: label(x.i), data: x.e.data })), { title: title.trim() || (af ? 'Alle skyfies' : 'All slides'), subtitle: `${ready.length} ${af ? 'skyfies' : 'slides'}`, brand });
+    const label = (i: number) => `${lessonLang === 'af' ? 'Skyfie' : 'Slide'} ${i + 1}`;
+    const data: LessonData = mergeLessons(ready.map((x) => ({ label: label(x.i), data: x.e.data })), { title: title.trim() || defaultTitle, subtitle: `${ready.length} ${lessonLang === 'af' ? 'skyfies' : 'slides'}`, brand });
     return { data, audio: mergeAudio(ready.map((x) => x.e.audio)) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
@@ -151,25 +158,6 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const [exporting, setExporting] = useState(false);
-  const exportVideo = async () => {
-    if (!combined) return;
-    setExporting(true);
-    setNotice(null);
-    try {
-      const zip = await buildHyperframesZip(combined.data, combined.audio, 'all');
-      const url = URL.createObjectURL(zip);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'all-slides-hyperframes.zip';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (e: any) {
-      setNotice(e?.message || 'Could not build the video project.');
-    } finally {
-      setExporting(false);
-    }
-  };
   const [saving, setSaving] = useState<{ done: number; total: number } | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const saveToLibrary = async () => {
@@ -178,10 +166,10 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
     setSaved(null);
     try {
       await saveLesson(
-        { title: title.trim() || (af ? 'Alle skyfies' : 'All slides'), slideLabel: af ? 'Alle skyfies' : 'All slides', voiceLabel: voice.label, lang: ready[0].e.lang, mode: 'combined', data: combined.data, audio: combined.audio },
+        { title: title.trim() || defaultTitle, slideLabel: defaultTitle, voiceLabel: voice.label, lang: ready[0].e.lang, mode: 'combined', data: combined.data, audio: combined.audio },
         (done, total) => setSaving({ done, total }),
       );
-      setSaved(title.trim() || (af ? 'Alle skyfies' : 'All slides'));
+      setSaved(title.trim() || defaultTitle);
     } catch (e: any) {
       setNotice(e?.message || 'Could not save the lesson.');
     } finally {
@@ -192,7 +180,7 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
   const chip = (s: Status) => {
     const map: Record<Status, [string, string]> = {
       ready: [af ? 'Gereed' : 'Ready', 'bg-emerald-50 text-emerald-700 border-emerald-100'],
-      revoice: [af ? 'Ander stem' : 'Other voice', 'bg-amber-50 text-amber-800 border-amber-100'],
+      revoice: [af ? 'Stem weer nodig' : 'Voice again', 'bg-amber-50 text-amber-800 border-amber-100'],
       todo: [af ? 'Moet gemaak word' : 'To produce', 'bg-slate-50 text-slate-600 border-slate-200'],
       toolong: [af ? 'Te lank' : 'Too long', 'bg-rose-50 text-rose-700 border-rose-100'],
       empty: [af ? 'Leeg' : 'Empty', 'bg-slate-50 text-slate-400 border-slate-100'],
@@ -201,14 +189,19 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4" role="dialog" aria-label={af ? 'Alle skyfies in een html' : 'All slides in one html file'}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden">
+    <div className={`fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center ${full ? 'p-0' : 'p-4'} anim-backdrop`} role="dialog" aria-label={af ? 'Alle skyfies in een html' : 'All slides in one html file'}>
+      <div ref={winRef} className={`bg-white shadow-2xl w-full flex flex-col overflow-hidden anim-pop ${full ? 'h-screen max-w-none rounded-none' : 'max-w-6xl h-[92vh] rounded-2xl'}`}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
           <div>
             <h2 className="text-lg text-indigo-600">{af ? 'Alle skyfies in een html-lêer' : 'All slides in one html file'}</h2>
             <p className="text-[11px] text-slate-500 flex items-center gap-1"><Volume2 size={11} /> {voice.label} · {pages.length} {af ? 'skyfies' : 'slides'}</p>
           </div>
-          <button onClick={() => { abortRef.current?.abort(); onClose(); }} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label="Close"><X size={16} /></button>
+          <div className="flex items-center gap-1">
+            <button onClick={toggleFull} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label={full ? 'Exit full screen' : 'Full screen'} title={full ? 'Exit full screen (Esc)' : 'Full screen'} data-testid="fullscreen">
+              {full ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+            <button onClick={() => { abortRef.current?.abort(); onClose(); }} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label="Close"><X size={16} /></button>
+          </div>
         </div>
 
         <div className="flex-1 min-h-0 flex flex-col md:flex-row">
@@ -234,7 +227,7 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
             </label>
             <label className="block text-[11px] font-bold text-slate-700">
               {af ? 'Titel van die les' : 'Lesson title'}
-              <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} className="mt-1 w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs" />
+              <input value={title} onChange={(e) => setTitleText(e.target.value)} maxLength={120} className="mt-1 w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs" />
             </label>
             <label className="flex items-center gap-2 text-[11px] font-bold text-slate-700">
               <input type="checkbox" checked={brand} onChange={(e) => setBrand(e.target.checked)} /> {af ? 'Get Sharp Academy-handelsmerk' : 'Get Sharp Academy branding'}
@@ -265,7 +258,7 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
               <div className="bg-indigo-50 rounded-xl p-3 border border-indigo-100 text-[11px] text-indigo-700 font-bold space-y-1.5" data-testid="progress">
                 <div className="flex items-center gap-2"><Loader className="animate-spin" size={12} /> {af ? 'Skyfie' : 'Slide'} {now.index + 1} {af ? 'van' : 'of'} {pages.length}</div>
                 <div className="font-normal">{now.phase === 'visuals' ? (af ? 'Claude bou die beelde…' : 'Claude is building the visuals…') : (af ? 'Neem die stem in een opname op…' : 'Voicing the slide in one take…')}</div>
-                <div className="h-1.5 rounded bg-indigo-100 overflow-hidden"><div className="h-full bg-indigo-600" style={{ width: `${Math.round((statuses.slice(0, now.index).filter((s) => s === 'ready').length / Math.max(1, usable.length)) * 100)}%` }} /></div>
+                <div className="h-1.5 rounded bg-indigo-100 overflow-hidden"><div className="h-full bg-indigo-600 anim-shimmer transition-all duration-500" style={{ width: `${Math.round((statuses.slice(0, now.index).filter((s) => s === 'ready').length / Math.max(1, usable.length)) * 100)}%` }} /></div>
               </div>
             )}
             {notice && <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-[11px] text-amber-800 flex gap-2"><AlertCircle size={13} className="flex-none mt-0.5" /> <span>{notice}</span></div>}
@@ -286,10 +279,6 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
                 {saving ? (af ? `Stoor klank ${saving.done} van ${saving.total}…` : `Saving audio ${saving.done} of ${saving.total}…`) : (af ? 'Stoor in biblioteek' : 'Save to library')}
               </button>
               {saved && <div className="rounded-xl p-2.5 text-[10px] bg-emerald-50 border border-emerald-100 text-emerald-800">{af ? `Gestoor as "${saved}" onder Biblioteek.` : `Saved as "${saved}" in the Library.`}</div>}
-              <button onClick={exportVideo} disabled={!combined || exporting || running}
-                className="w-full py-2 rounded-xl border border-violet-200 text-violet-700 text-xs font-bold hover:bg-violet-50 disabled:opacity-40 flex items-center justify-center gap-2">
-                {exporting ? <Loader className="animate-spin" size={13} /> : <Film size={13} />} {af ? 'HyperFrames-video projek (.zip)' : 'HyperFrames video project (.zip)'}
-              </button>
             </div>
           </div>
 
@@ -298,7 +287,7 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
             <div className="flex-none px-4 py-2.5 bg-white border-b border-slate-100 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600">
               <span className="brand-label text-[11px] text-slate-500">{af ? 'Skyfies' : 'Slides'}</span>
               <span><b className="text-emerald-700">{count('ready')}</b> {af ? 'gereed' : 'ready'}</span>
-              {count('revoice') > 0 && <span><b className="text-amber-700">{count('revoice')}</b> {af ? 'ander stem' : 'other voice'}</span>}
+              {count('revoice') > 0 && <span title={af ? 'Ander verteller, of nie in een deurlopende opname gemaak nie' : 'Another narrator, or not made as one continuous take'}><b className="text-amber-700">{count('revoice')}</b> {af ? 'stem weer nodig' : 'voice again'}</span>}
               <span><b>{count('todo')}</b> {af ? 'nog te maak' : 'to produce'}</span>
               {tooLong > 0 && <span><b className="text-rose-700">{tooLong}</b> {af ? 'te lank' : 'too long'}</span>}
               {allReady && <span className="flex items-center gap-1 text-emerald-700 font-bold"><CheckCircle2 size={12} /> {af ? 'Alles gereed' : 'All ready'}</span>}
@@ -310,7 +299,7 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
                 const e = entries[p.id];
                 const secs = e ? (Object.values(e.audio) as string[]).reduce<number>((n, u) => n + Math.max(0, (u.length * 0.75 - 44) / 48000), 0) : 0;
                 return (
-                  <div key={p.id} className={`bg-white rounded-xl border px-3 py-2 flex items-center gap-3 ${now?.index === i ? 'border-indigo-300 ring-2 ring-indigo-100' : 'border-slate-200'}`}>
+                  <div key={p.id} style={{ animationDelay: `${Math.min(i, 14) * 30}ms` }} className={`anim-fade-up bg-white rounded-xl border px-3 py-2 flex items-center gap-3 transition-shadow ${now?.index === i ? 'border-indigo-300 ring-2 ring-indigo-100' : 'border-slate-200'}`}>
                     <div className="w-7 h-7 flex-none rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">{i + 1}</div>
                     <div className="min-w-0 flex-1">
                       <div className="text-xs font-bold text-slate-800 truncate">{(e?.data.title as string) || p.text.trim().split(/\n/)[0].slice(0, 70) || '—'}</div>

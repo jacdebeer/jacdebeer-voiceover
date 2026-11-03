@@ -3,7 +3,8 @@
 import { getStore } from '@netlify/blobs';
 // @ts-ignore - plain JS module
 import { repairSpokenLines, dedupeSelf, addDefaultIcons } from '../lib/lessonRepair.mjs';
-import { VISUALS_STORE, VISUALS_MODEL, VISUALS_MAX_OUTPUT_TOKENS, buildSystem, buildUserText } from '../lib/visualsJob.mts';
+import { VISUALS_STORE, VISUALS_MAX_OUTPUT_TOKENS, buildSystem, buildUserText } from '../lib/visualsJob.mts';
+import { callMessages } from '../lib/anthropic.mts';
 
 export default async (req: Request): Promise<Response> => {
   let jobId: string | undefined;
@@ -25,21 +26,13 @@ export default async (req: Request): Promise<Response> => {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error('The server is missing its Anthropic API key.');
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model: VISUALS_MODEL,
-        max_tokens: VISUALS_MAX_OUTPUT_TOKENS,
-        system: buildSystem(job.input.lang, job.input.mode),
-        messages: [{ role: 'user', content: buildUserText(job.input) }],
-      }),
+    const result = await callMessages(apiKey, {
+      max_tokens: VISUALS_MAX_OUTPUT_TOKENS,
+      system: buildSystem(job.input.lang, job.input.mode),
+      messages: [{ role: 'user', content: buildUserText(job.input) }],
     });
-    const reply: any = await res.json();
-    if (!res.ok) {
-      console.error('Anthropic error', res.status, reply?.error?.message);
-      throw new Error(`Anthropic API error ${res.status}: ${reply?.error?.message || 'request failed'}`);
-    }
+    if (result.ok === false) throw new Error(`Anthropic API error ${result.status}: ${result.message}`);
+    const reply: any = result.reply;
     if (reply.stop_reason === 'max_tokens') {
       throw new Error('The visuals ran past the output limit. Split the slide into smaller slides.');
     }

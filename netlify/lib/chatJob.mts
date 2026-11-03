@@ -8,7 +8,7 @@ import { afrikaansGlossaryPrompt } from './afrikaansTerms.mjs';
 import { applyPatch, describeChanges } from './lessonPatch.mjs';
 // @ts-ignore - plain JS module
 import { addDefaultIcons } from './lessonRepair.mjs';
-import { VISUALS_MODEL } from './visualsJob.mts';
+import { callMessages } from './anthropic.mts';
 
 export const CHAT_STORE = 'chat-jobs';
 export const CHAT_MAX_OUTPUT_TOKENS = 16000;
@@ -127,18 +127,10 @@ function extractJson(text: string): any {
 }
 
 async function callModel(apiKey: string, system: string, messages: any[], fetchImpl: typeof fetch): Promise<string> {
-  const res = await fetchImpl('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: VISUALS_MODEL, max_tokens: CHAT_MAX_OUTPUT_TOKENS, system, messages }),
-  });
-  const body: any = await res.json();
-  if (!res.ok) {
-    console.error('Anthropic error', res.status, body?.error?.message);
-    throw new Error(`Anthropic API error ${res.status}: ${body?.error?.message || 'request failed'}`);
-  }
-  if (body.stop_reason === 'max_tokens') throw new Error('The answer ran past the output limit. Ask for a smaller change.');
-  return (body.content || []).filter((c: any) => c.type === 'text').map((c: any) => c.text).join('');
+  const r = await callMessages(apiKey, { max_tokens: CHAT_MAX_OUTPUT_TOKENS, system, messages }, fetchImpl);
+  if (r.ok === false) throw new Error(`Anthropic API error ${r.status}: ${r.message}`);
+  if (r.reply.stop_reason === 'max_tokens') throw new Error('The answer ran past the output limit. Ask for a smaller change.');
+  return (r.reply.content || []).filter((c: any) => c.type === 'text').map((c: any) => c.text).join('');
 }
 
 /** Asks Claude, checks any proposal against the lesson rules, and gives the model one chance to repair a bad proposal. */

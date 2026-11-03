@@ -5,6 +5,7 @@ import type { Config } from '@netlify/functions';
 import { embedRoute, libraryRoute } from '../lib/library.mts';
 import { VISUALS_STORE, LEVELS, type Level, type Mode } from '../lib/visualsJob.mts';
 import { CHAT_STORE, MAX_LESSON_CHARS, MAX_MESSAGE_CHARS, cleanTimeline } from '../lib/chatJob.mts';
+import { ELEVENLABS_BASE, ELEVENLABS_VOICE_ID, TTS_STORE, SYNC_TTS_MAX_CHARS, elevenSpeech, quotaMessage } from '../lib/elevenTts.mts';
 // @ts-ignore - plain JS module
 import { afrikaansGlossaryPrompt } from '../lib/afrikaansTerms.mjs';
 // @ts-ignore - plain JS module
@@ -76,8 +77,6 @@ async function transcribe(ai: GoogleGenAI, body: any): Promise<Response> {
   return json({ text });
 }
 
-const ELEVENLABS_BASE = 'https://api.elevenlabs.io';
-const ELEVENLABS_VOICE_ID = /^[A-Za-z0-9]{10,40}$/;
 
 async function listElevenLabsVoices(): Promise<Response> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
@@ -116,60 +115,72 @@ async function listElevenLabsVoices(): Promise<Response> {
   return json({ configured: true, voices: voices.filter((v) => ELEVENLABS_VOICE_ID.test(v.id)) });
 }
 
+function ttsInput(body: any): { error: Response } | { input: { text: string; voiceId: string; isAfrikaans: boolean; attempt: number; pronunciations?: Record<string, string> } } {
+  const text = cleanText(body.text);
+  if (!text) return { error: json({ error: 'Text cannot be empty or is too long' }, 400) };
+  const voiceId = body.voiceName;
+  if (typeof voiceId !== 'string' || !ELEVENLABS_VOICE_ID.test(voiceId)) return { error: json({ error: 'Invalid voice id' }, 400) };
+  const attempt = Number.isInteger(body.attempt) && body.attempt > 0 ? Math.min(body.attempt, 5) : 0;
+  return { input: { text, voiceId, isAfrikaans: body.isAfrikaans === true, attempt, pronunciations: body.pronunciations } };
+}
+
 async function ttsElevenLabs(body: any): Promise<Response> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) return json({ error: 'The server is missing its ElevenLabs API key.' }, 500);
-  const text = cleanText(body.text);
-  if (!text) return json({ error: 'Text cannot be empty or is too long' }, 400);
-  const voiceId = body.voiceName;
-  if (typeof voiceId !== 'string' || !ELEVENLABS_VOICE_ID.test(voiceId)) {
-    return json({ error: 'Invalid voice id' }, 400);
+  const parsed = ttsInput(body);
+  if ('error' in parsed) return parsed.error;
+  // a long text would run past the time a synchronous function may take: the browser uses /api/tts-job for those
+  if (parsed.input.text.length > SYNC_TTS_MAX_CHARS * 4) return json({ error: 'This text is too long for one request. Use the voice job.', useJob: true }, 413);
+  const r = await elevenSpeech(apiKey, parsed.input, 'pcm_24000');
+  if (r.ok === false) {
+    if (r.quota) return json({ error: quotaMessage(r.message), isQuotaExceeded: true, fallbackToBrowser: true }, 429);
+    return json({ error: r.message }, 502);
   }
-  const languageCode = body.isAfrikaans === true ? 'af' : 'en';
-  const spoken: string = forSpeech(text, languageCode, body.pronunciations);
-  const attempt = Number.isInteger(body.attempt) && body.attempt > 0 ? Math.min(body.attempt, 5) : 0;
+  return json({ audioBase64: Buffer.from(r.bytes).toString('base64') });
+}
 
-  // Afrikaans is only supported by the Eleven v3 model.
-  const res = await fetch(`${ELEVENLABS_BASE}/v1/text-to-speech/${voiceId}?output_format=pcm_24000`, {
-    method: 'POST',
-    headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
-    // stability 1.0 is v3's "Robust" setting: the voice varies least from one line to the next.
-    body: JSON.stringify({
-      text: spoken,
-      model_id: 'eleven_v3',
-      language_code: languageCode,
-      voice_settings: { stability: 1.0 },
-      // a retry (after a Dutch-sounding take) must not repeat the same sample
-      ...(attempt ? { seed: 1000 + attempt * 7919 } : {}),
-    }),
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    console.error('ElevenLabs TTS failed:', res.status, detail.slice(0, 500));
-    let message = `ElevenLabs could not generate audio (${res.status}).`;
-    let statusCode = '';
-    try {
-      const parsed = JSON.parse(detail);
-      const d = parsed?.detail;
-      if (typeof d === 'string') message = d;
-      else if (typeof d?.message === 'string') message = d.message;
-      if (typeof d?.status === 'string') statusCode = d.status;
-    } catch { /* keep default message */ }
-    // A credit limit (account or API key) comes back as quota_exceeded, not always as 429.
-    if (res.status === 429 || statusCode === 'quota_exceeded' || /quota|credits/i.test(message)) {
-      return json(
-        {
-          error: `ElevenLabs credits: ${message} Raise this API key's credit limit or top up in ElevenLabs, or choose a Gemini voice.`,
-          isQuotaExceeded: true,
-          fallbackToBrowser: true,
-        },
-        429,
-      );
-    }
-    return json({ error: message }, 502);
+// A whole slide as one take: runs in a background function and is fetched as MP3 when it is done.
+async function ttsJobRoute(req: Request, route: string, userKey: string): Promise<Response | null> {
+  if (route === '/api/tts-job' && req.method === 'POST') {
+    if (!process.env.ELEVENLABS_API_KEY) return json({ error: 'The server is missing its ElevenLabs API key.' }, 500);
+    let body: any;
+    try { body = await req.json(); } catch { return json({ error: 'Invalid request body' }, 400); }
+    const parsed = ttsInput(body ?? {});
+    if ('error' in parsed) return parsed.error;
+    const jobId = crypto.randomUUID();
+    await getStore(TTS_STORE).setJSON(jobId, { status: 'queued', owner: userKey, input: parsed.input, createdAt: Date.now() });
+    await fetch(new URL('/.netlify/functions/tts-background', req.url), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jobId }),
+    });
+    return json({ jobId }, 202);
   }
-  const audioBase64 = Buffer.from(await res.arrayBuffer()).toString('base64');
-  return json({ audioBase64 });
+  const m = route.match(/^\/api\/tts-job\/([0-9a-f-]{36})(\/audio)?$/i);
+  if (m && req.method === 'GET') {
+    const store = getStore(TTS_STORE);
+    const job: any = await store.get(m[1], { type: 'json' });
+    if (!job || job.owner !== userKey) return json({ error: 'Job not found.' }, 404);
+    if (m[2]) {
+      if (job.status !== 'done') return json({ error: 'The voice is not ready yet.' }, 409);
+      const audio = await store.get(`${m[1]}.audio`, { type: 'arrayBuffer' });
+      if (!audio) return json({ error: 'The voice is gone. Generate it again.' }, 404);
+      return new Response(audio, { status: 200, headers: { 'content-type': 'audio/mpeg', 'cache-control': 'no-store' } });
+    }
+    if (job.status === 'done') return json({ status: 'done', bytes: job.bytes });
+    if (job.status === 'error') {
+      await store.delete(m[1]);
+      return json({ status: 'error', error: job.error, isQuotaExceeded: job.quota === true });
+    }
+    return json({ status: job.status });
+  }
+  if (m && req.method === 'DELETE' && !m[2]) {
+    const store = getStore(TTS_STORE);
+    const job: any = await store.get(m[1], { type: 'json' });
+    if (job && job.owner === userKey) { await store.delete(m[1]); await store.delete(`${m[1]}.audio`); }
+    return json({ ok: true });
+  }
+  return null;
 }
 
 async function tts(ai: GoogleGenAI, body: any): Promise<Response> {
@@ -556,6 +567,13 @@ export default async (req: Request): Promise<Response> => {
   } catch (error) {
     console.error('Visuals request failed:', error);
     return json({ error: 'Could not start the visuals job.' }, 502);
+  }
+  try {
+    const job = await ttsJobRoute(req, route, user.id);
+    if (job) return job;
+  } catch (error) {
+    console.error('Voice job request failed:', error);
+    return json({ error: 'Could not start the voice job.' }, 502);
   }
   try {
     const saved = await workspaceRoute(req, route, user.id);
