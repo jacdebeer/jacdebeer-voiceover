@@ -22,7 +22,8 @@ body{font-family:var(--font);background:#EEF1F6;color:var(--ink);line-height:1.5
 .stage h2 .num{color:var(--accent);margin-right:8px}
 .stageNote{font-size:.8rem;color:var(--ink2);margin-bottom:16px}
 .block{margin:18px 0}
-@media(max-width:760px){.block{overflow-x:auto;-webkit-overflow-scrolling:touch}}
+/* a wide table (a six-column journal, five T-accounts) scrolls sideways inside its block instead of being cut off */
+.block{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:3px}
 .block:first-of-type{margin-top:6px}
 .blockTitle{font-size:.82rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--ink2);margin-bottom:7px}
 table{border-collapse:collapse;width:100%;background:#fff;font-size:.8rem;table-layout:auto}
@@ -99,6 +100,7 @@ table.t tr.tot td.num{border-bottom:3px double var(--ink)}
   .nav,.ctrl,.cap,.foot{display:none!important}
   .stage{border:none;padding:0;page-break-after:always}
   tr.hide{display:table-row!important}
+  .block{overflow:visible}
 }
 
 /* formula tiles */
@@ -150,3 +152,5 @@ table.t tr.tot td.num{border-bottom:3px double var(--ink)}
 .chg .ctext b .ico{font-size:1.5em;margin-right:.3em;vertical-align:-.1em}
 .ficon{font-size:2rem}
 .flow .step .arw{position:absolute;top:10px;right:12px;margin:0;font-size:1.3rem}
+
+.clock{font-size:.75rem;font-weight:700;color:var(--ink2);font-variant-numeric:tabular-nums;white-space:nowrap}

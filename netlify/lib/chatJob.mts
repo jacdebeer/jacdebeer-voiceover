@@ -16,7 +16,46 @@ export const MAX_LESSON_CHARS = 150_000;
 export const MAX_MESSAGE_CHARS = 2000;
 
 export interface ChatMessage { role: 'user' | 'assistant'; text: string }
-export interface ChatInput { lesson: any; messages: ChatMessage[]; lang: 'en' | 'af'; mode?: 'read' | 'explain' }
+export interface TimelineItem { t: number; kind: string; text: string; blocks: number[] }
+export interface TimelineBeat { title: string; start: number; end: number; blockTypes: string[]; items: TimelineItem[] }
+export interface Timeline { total: number; beats: TimelineBeat[] }
+export interface ChatInput { lesson: any; messages: ChatMessage[]; lang: 'en' | 'af'; mode?: 'read' | 'explain'; timeline?: Timeline | null; now?: number | null }
+
+const num = (v: unknown) => (typeof v === 'number' && isFinite(v) ? Math.round(Math.max(0, Math.min(v, 36000)) * 10) / 10 : 0);
+
+/** Keeps only the shape and size the prompt needs. The timeline comes from the browser, so it is checked. */
+export function cleanTimeline(tl: any): Timeline | null {
+  if (!tl || typeof tl !== 'object' || !Array.isArray(tl.beats) || !tl.beats.length) return null;
+  const beats: TimelineBeat[] = tl.beats.slice(0, 12).map((b: any) => ({
+    title: String(b?.title ?? '').slice(0, 80),
+    start: num(b?.start),
+    end: num(b?.end),
+    blockTypes: (Array.isArray(b?.blockTypes) ? b.blockTypes : []).slice(0, 12).map((x: any) => String(x).slice(0, 24)),
+    items: (Array.isArray(b?.items) ? b.items : []).slice(0, 40).map((it: any) => ({
+      t: num(it?.t),
+      kind: it?.kind === 'caption' ? 'caption' : 'narration',
+      text: String(it?.text ?? '').slice(0, 300),
+      blocks: (Array.isArray(it?.blocks) ? it.blocks : []).slice(0, 12).filter((x: any) => Number.isInteger(x) && x >= 0),
+    })),
+  }));
+  return { total: num(tl.total), beats };
+}
+
+export const mmss = (t: number) => `${Math.floor(Math.round(t) / 60)}:${String(Math.round(t) % 60).padStart(2, '0')}`;
+
+function timelineText(tl: Timeline, now: number | null | undefined): string {
+  const lines: string[] = [];
+  tl.beats.forEach((b, i) => {
+    lines.push(`Beat ${i} (${mmss(b.start)} to ${mmss(b.end)}) "${b.title}" blocks: ${b.blockTypes.map((x, k) => `${k}=${x}`).join(', ') || 'none'}`);
+    for (const it of b.items) lines.push(`  ${mmss(it.t)} ${it.kind === 'caption' ? 'caption' : 'says'}${it.blocks.length ? ` (shows block ${it.blocks.join(', ')})` : ''}: ${it.text}`);
+  });
+  let nowLine = '';
+  if (typeof now === 'number' && now >= 0) {
+    const i = tl.beats.findIndex((b) => now >= b.start && now < b.end);
+    nowLine = `\nThe video is paused at ${mmss(now)}${i >= 0 ? ` (beat ${i})` : ''}. "Now", "here" and "this part" mean this moment.`;
+  }
+  return `Timeline of the video, in minutes:seconds from the start. The user only knows these times, not the beat numbers:\n${lines.join('\n')}${nowLine}`;
+}
 export interface ChatResult {
   reply: string;
   proposal: null | { summary: string; lesson: any; changes: any };
@@ -40,6 +79,8 @@ const EDIT_RULES = [
   '2. SPOKEN-TEXT changes: change "caption" and "narration" entries. Narration entry i is spoken when the i-th revealed element of the beat appears (elements are revealed in order through the beat\'s blocks: a source document is one element; every table row, T-account row (n-th debit and n-th credit entry share a row), card, step, tile, chip and text block is one element; a journal, ledger or trial balance also has a totals row). If you add or remove a revealed element, add or remove the matching narration entry at the same position (use "" when nothing is said). Changing spoken text means the whole lesson must be voiced again (credits); say so in "reply". Write plain spoken words: no symbols, abbreviations or digits. Never say a sentence twice.',
   '3. PRONUNCIATION: the object "pronunciations" maps a written word to how the voice must say it, for example {"Bates": "Baates"}. It only affects the audio, never the screen. Use "add" or "replace" on "/pronunciations/<word>" (or add the whole "/pronunciations" object if it does not exist yet). At most 50 words.',
   '4. AUDIO that cannot be changed here: the narrator voice, speed and volume. If asked, explain that the narrator is chosen in the Narrator list of this window and that the volume is already levelled.',
+  '',
+  'TIME REFERENCES. The user watches the video and cannot see beat numbers. They point at a moment as m:ss ("at 1:23"), a stretch ("from 0:40 to 1:10"), "now"/"here"/"this part" (the paused position given to you), or by quoting what is said or shown. Use the timeline you are given to find the beat, block and line, then write the patch with the real beat index. A time between two lines means the line and elements shown at that moment (the latest timeline entry at or before it). Never ask the user for a beat number. In "reply" and "summary" always say times (for example "at 1:23"), never beat numbers. If a time could mean two different things, ask which one.',
   '',
   'Keep the lesson in its language. Do not translate it unless asked. Never invent facts the user did not give; for figures that are not specified, keep the existing ones.',
 ].join('\n');
@@ -67,6 +108,7 @@ export function buildChatMessages(input: ChatInput): { role: 'user' | 'assistant
   last.content =
     'The lesson as it is now (a JSON document; count beats from 0):\n' + JSON.stringify(input.lesson) +
     '\n\nBeats:\n' + outline +
+    (input.timeline ? '\n\n' + timelineText(input.timeline, input.now) : '') +
     (input.mode === 'read'
       ? '\n\nNote: this lesson reads a slide script word for word. Tell the user in your reply when a spoken-text change makes the voice-over differ from the slide.'
       : '') +

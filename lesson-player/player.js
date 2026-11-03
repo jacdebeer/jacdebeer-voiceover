@@ -305,7 +305,78 @@ var RENDER = {
 
 var beats = DATA.beats || [];
 var bi = 0, steps = [], si = 0, timer = null, playing = false, showAll = false;
+var CLOCK = null;   /* the lesson's timeline, see computeSchedule */
+var groups = [];   /* what is revealed together with one narration line: [{from, to, lines, blocks}] over steps */
 var STEP_MS = 3300;   /* seconds per revealed line while playing */
+
+
+/* ---------- revealing in groups ----------
+   Narration entry k belongs to the k-th revealed element. When the lesson has fewer narration entries than elements,
+   the elements are revealed in as many groups as there are entries, cut at block boundaries where possible, so every
+   sentence appears together with the part of the screen it talks about and no element appears in silence. */
+function makeGroups(ids, N){
+  var S = ids.length, out = [];
+  if(!S) return out;
+  N = Math.max(1, Math.min(N, S));
+  var runs = [];
+  ids.forEach(function(id, i){
+    if(runs.length && runs[runs.length-1].id === id) runs[runs.length-1].n++;
+    else runs.push({id:id, from:i, n:1});
+  });
+  var m = runs.length;
+  if(m >= N){
+    var cum = 0, start = 0;
+    for(var r = 0; r < m; r++){
+      cum += runs[r].n;
+      var runsLeft = m - r - 1, groupsLeft = N - out.length - 1;
+      if(runsLeft > 0 && out.length < N - 1 && (cum >= Math.round(S * (out.length + 1) / N) || runsLeft === groupsLeft)){
+        out.push([start, cum]); start = cum;
+      }
+    }
+    out.push([start, S]);
+  } else {
+    /* more lines than blocks: every block gets a group, the rest are shared out by size (square root, so one long table
+       does not take them all), never more groups than the block has elements */
+    var per = runs.map(function(){ return 1; }), extra = N - m, wsum = 0;
+    runs.forEach(function(r){ wsum += Math.sqrt(r.n); });
+    var ideal = runs.map(function(r){ return Math.min(r.n, N * Math.sqrt(r.n) / wsum); });
+    runs.forEach(function(r, i){ var f = Math.max(1, Math.min(r.n, Math.floor(ideal[i]))); extra -= f - per[i]; per[i] = f; });
+    while(extra < 0){ var big = -1; per.forEach(function(v, i){ if(v > 1 && (big < 0 || per[i] > per[big])) big = i; }); if(big < 0) break; per[big]--; extra++; }
+    while(extra > 0){
+      var best = -1, bv = -Infinity;
+      runs.forEach(function(r, i){ var rem = ideal[i] - per[i]; if(per[i] < r.n && rem > bv){ bv = rem; best = i; } });
+      if(best < 0) break;
+      per[best]++; extra--;
+    }
+    runs.forEach(function(r, i){
+      for(var j = 0; j < per[i]; j++) out.push([r.from + Math.floor(r.n * j / per[i]), r.from + Math.floor(r.n * (j + 1) / per[i])]);
+    });
+  }
+  return out;
+}
+
+function layoutBeat(b){
+  var stage = document.getElementById('pStage');
+  var blocks = Array.prototype.slice.call(stage.querySelectorAll('.block'));
+  var ids = steps.map(function(x){ var k = blocks.indexOf(x.closest('.block')); return k < 0 ? 1000 : k; });
+  var nar = b.narration || [];
+  var ranges;
+  var spread = steps.length > 0 && nar.length > steps.length;   /* more lines than elements: each element says several */
+  var oneToOne = nar.length === 0 || nar.length === steps.length || spread;
+  if(oneToOne) ranges = steps.map(function(_, i){ return [i, i + 1]; });
+  else ranges = makeGroups(ids, nar.length);
+  groups = ranges.map(function(r, g){
+    var lines = [];
+    if(spread){
+      var a = Math.round(g * nar.length / steps.length), z = Math.round((g + 1) * nar.length / steps.length);
+      nar.slice(a, z).forEach(function(x){ if(x) lines.push(x); });
+    } else if(nar[g]) lines.push(nar[g]);
+    var bl = []; for(var q = r[0]; q < r[1]; q++) if(ids[q] !== 1000 && bl.indexOf(ids[q]) < 0) bl.push(ids[q]);
+    return {from:r[0], to:r[1], lines:lines, blocks:bl};
+  });
+}
+function gIndex(){ var n = 0; for(var i = 0; i < groups.length; i++) if(groups[i].to <= si) n++; return n; }
+function groupLines(g){ return (groups[g] && groups[g].lines) || []; }
 
 function renderBeat(){
   var b = beats[bi] || {};
@@ -338,6 +409,7 @@ function renderBeat(){
   }
   if(b.quiz) st.appendChild(quizEl(b.quiz));
   steps = Array.prototype.slice.call(st.querySelectorAll('[data-reveal]'));
+  layoutBeat(b);
   si = showAll ? steps.length : 0;
   paint();
   document.getElementById('pCap').textContent = b.caption || '';
@@ -353,16 +425,17 @@ function paint(){
   document.getElementById('bFill').style.width = pct + '%';
   document.getElementById('bPrev').disabled = (bi === 0 && si === 0);
   document.getElementById('bNext').disabled = (bi === beats.length - 1 && si >= steps.length);
+  clockPaint();
 }
 
 function stepFwd(){
   if(si < steps.length){
-    si++;
-    var r = steps[si-1];
-    r.classList.remove('hide');
+    var g = groups[gIndex()] || {from:si, to:si + 1};
     steps.forEach(function(x){ x.classList.remove('now'); });
-    r.classList.add('pop', 'now');
-    setTimeout(function(){ r.classList.remove('pop'); }, 620);
+    var shown = steps.slice(g.from, g.to);
+    si = g.to;
+    shown.forEach(function(r){ r.classList.remove('hide'); r.classList.add('pop', 'now'); });
+    setTimeout(function(){ shown.forEach(function(r){ r.classList.remove('pop'); }); }, 620);
     paint();
     return true;
   }
@@ -370,7 +443,7 @@ function stepFwd(){
   return false;
 }
 function stepBack(){
-  if(si > 0){ si--; paint(); return; }
+  if(si > 0){ var g = gIndex(); si = g > 0 ? groups[g - 1].from : 0; paint(); return; }
   if(bi > 0){ bi--; renderBeat(); si = steps.length; paint(); }
 }
 /* ---------- voice-over: pre-recorded narration embedded at build time ----------
@@ -435,15 +508,6 @@ function say(text, done){
     .catch(function(){ if(token === sayToken){ banner('cloud', voiceErr); finish(); } });
 }
 
-/* what to say for the element that is about to be revealed: its own narration entry; the last element also says any
-   entries beyond the number of elements, so no sentence of the script is ever skipped */
-function linesFor(i){
-  var n = (beats[bi] || {}).narration || [];
-  var out = [];
-  if(n[i]) out.push(n[i]);
-  if(i === steps.length - 1) for(var k = steps.length; k < n.length; k++) if(n[k]) out.push(n[k]);
-  return out;
-}
 function sayAll(lines, done){
   if(!lines.length){ done(); return; }
   say(lines[0], function(){ sayAll(lines.slice(1), done); });   /* hush() cancels pending callbacks, so no guard is needed here */
@@ -460,7 +524,7 @@ function sayBeatIntro(b, cb){
 
 function tick(){
   if(!playing) return;
-  var lines = linesFor(si);
+  var lines = groupLines(gIndex());
   var atEnd = (si >= steps.length);
   if(!stepFwd()){ play(false); return; }
   if(atEnd){                       /* we moved to a new beat: read its caption first */
@@ -527,7 +591,7 @@ var sc = DATA.scenario || {};
 document.getElementById('pMeta').textContent = [sc.entity, sc.period, sc.vat].filter(Boolean).join(' \u00B7 ');
 document.getElementById('pFoot').textContent = L.footer;
 document.getElementById('bPrev').onclick = function(){ play(false); hush(); stepBack(); };
-document.getElementById('bNext').onclick = function(){ var ls = linesFor(si); play(false); hush(); if(stepFwd() && voiceOn){ if(ls.length) sayAll(ls, function(){}); else say((beats[bi]||{}).caption || ''); } };
+document.getElementById('bNext').onclick = function(){ var ls = groupLines(gIndex()); play(false); hush(); if(stepFwd() && voiceOn){ if(ls.length) sayAll(ls, function(){}); else say((beats[bi]||{}).caption || ''); } };
 document.getElementById('bPlay').onclick = function(){ play(!playing); };
 document.getElementById('bAll').textContent = L.showAll;
 document.getElementById('bAll').onclick = function(){ showAll = !showAll; si = showAll ? steps.length : 0; paint(); };
@@ -586,4 +650,99 @@ document.addEventListener('keydown', function(e){
   if(e.key === ' '){ e.preventDefault(); play(!playing); }
 });
 play(false);
+renderBeat();
+
+/* ---------- time in the video ----------
+   The player plays the lesson on a fixed timeline: each beat starts with its caption, then every group of elements
+   appears together with its narration line, with a short pause after each line. The clock shows where the screen is
+   on that timeline, and the page that hosts the player (the chat editor) can read it, so a change can be asked for
+   "at 1:23" without knowing which beat that is. */
+var LAYOUT = [], DUR = {}, GAP = 0.35, SILENT = 1.2;
+function fmtT(t){ t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ':' + ('0' + (t % 60)).slice(-2); }
+function estDur(text){ return Math.max(1.2, String(text).trim().split(/\s+/).length * 0.4); }
+function dur(text){
+  if(DUR[text] !== undefined) return DUR[text];
+  return (NARR[text] || !DATA.embeddedAudioOnly) ? estDur(text) : 0;
+}
+function wavSeconds(uri){
+  var b64 = uri.slice(uri.indexOf(',') + 1);
+  var head = atob(b64.slice(0, 64));
+  var rate = head.charCodeAt(28) | (head.charCodeAt(29) << 8) | (head.charCodeAt(30) << 16) | (head.charCodeAt(31) << 24);
+  var pad = b64.slice(-2) === '==' ? 2 : (b64.slice(-1) === '=' ? 1 : 0);
+  var bytes = Math.floor(b64.length * 3 / 4) - pad - 44;
+  return rate > 0 && bytes > 0 ? bytes / rate : estDur('x x x');
+}
+function computeSchedule(){
+  var t = 0, out = {total:0, beats:[]};
+  beats.forEach(function(b, i){
+    var lay = LAYOUT[i] || {n:0, groups:[]}, start = t, items = [], reveals = [];
+    var intro = [];
+    if(b.caption) intro.push(b.caption);
+    if(!lay.n) (b.narration || []).forEach(function(x){ if(x) intro.push(x); });
+    intro.forEach(function(x, k){ items.push({t:t, kind:(k === 0 && b.caption) ? 'caption' : 'narration', text:x, blocks:[]}); t += dur(x); });
+    lay.groups.forEach(function(g){
+      reveals.push(t);
+      if(g.lines.length){
+        g.lines.forEach(function(x){ items.push({t:t, kind:'narration', text:x, blocks:g.blocks}); t += dur(x); });
+        t += GAP;
+      } else t += SILENT;
+    });
+    out.beats.push({start:start, end:t, reveals:reveals, items:items});
+  });
+  out.total = t;
+  CLOCK = out;
+  clockPaint();
+  postHost({lessonTimeline: lightClock()});
+}
+function lightClock(){
+  var r = function(x){ return Math.round(x * 10) / 10; };
+  return {total:r(CLOCK.total), beats:CLOCK.beats.map(function(c, i){
+    return {title:String((beats[i] || {}).title || '').slice(0, 80), start:r(c.start), end:r(c.end),
+      blockTypes:((beats[i] || {}).blocks || []).map(function(x){ return x.type; }),
+      items:c.items.map(function(it){ return {t:r(it.t), kind:it.kind, text:String(it.text).slice(0, 300), blocks:it.blocks}; })};
+  })};
+}
+function posTime(){
+  var c = CLOCK && CLOCK.beats[bi];
+  if(!c) return 0;
+  var g = gIndex();
+  return g > 0 ? c.reveals[g - 1] : c.start;
+}
+function postHost(msg){ try { if(window.parent && window.parent !== window) window.parent.postMessage(msg, '*'); } catch(e){} }
+function clockPaint(){
+  if(!CLOCK) return;
+  var t = posTime();
+  var el_ = document.getElementById('bClock');
+  if(el_) el_.textContent = fmtT(t) + ' / ' + fmtT(CLOCK.total);
+  postHost({lessonPos:{t:Math.round(t * 10) / 10, total:Math.round(CLOCK.total * 10) / 10, beat:bi}});
+}
+window.addEventListener('message', function(e){
+  if(e.data === 'lesson-timeline?' && CLOCK){ postHost({lessonTimeline: lightClock()}); clockPaint(); }
+});
+(function(){
+  /* how every beat splits into groups, worked out once by laying each beat out */
+  var keep = {bi:bi, showAll:showAll};
+  showAll = true;
+  beats.forEach(function(b, i){ bi = i; renderBeat(); LAYOUT[i] = {n:steps.length, groups:groups.map(function(g){ return {lines:g.lines, blocks:g.blocks, from:g.from, to:g.to}; })}; });
+  bi = keep.bi; showAll = keep.showAll;
+  /* how long each line is: exact for a WAV clip, read from the clip for an MP3 data URI, estimated otherwise */
+  var texts = {};
+  beats.forEach(function(b){ [b.caption].concat(b.narration || []).forEach(function(x){ if(x && String(x).trim()) texts[x] = 1; }); });
+  var pending = 0;
+  Object.keys(texts).forEach(function(x){
+    var src = NARR[x];
+    if(!src) return;
+    if(/^data:audio\/(wav|x-wav)/.test(src)){ try { DUR[x] = wavSeconds(src); } catch(e){} }
+    else if(/^data:audio\//.test(src)){
+      pending++;
+      var a = new Audio();
+      var done = function(d){ if(d && isFinite(d)) DUR[x] = d; if(--pending === 0) computeSchedule(); };
+      a.preload = 'metadata';
+      a.onloadedmetadata = function(){ done(a.duration); };
+      a.onerror = function(){ done(0); };
+      a.src = src;
+    }
+  });
+  computeSchedule();
+})();
 renderBeat();
