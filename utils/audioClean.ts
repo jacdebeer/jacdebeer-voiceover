@@ -3,7 +3,7 @@ const FRAME = SAMPLE_RATE / 100; // 10 ms analysis frames
 const HIGH_PASS_HZ = 70; // removes DC offset and low thumps that click at clip edges
 const MERGE_GAP_FRAMES = 15; // gaps shorter than 150 ms are part of the same phrase
 const MIN_SEGMENT_FRAMES = 12; // an isolated sound shorter than 120 ms is treated as noise
-const LEAD_MS = 30;
+const LEAD_MS = 50;
 const FADE_IN_MS = 10;
 const FADE_OUT_MS = 40;
 const TAIL_SILENCE_MS = 200;
@@ -59,7 +59,12 @@ export function cleanClip(pcm: Uint8Array): Uint8Array {
   if (!segs.length) return pcm;
 
   const lead = Math.round((SAMPLE_RATE * LEAD_MS) / 1000);
-  const startSample = Math.max(0, segs[lo][0] * FRAME - lead);
+  // A soft first sound (B, P, F, S...) is quieter than the threshold. Walk back until the energy really is gone,
+  // so the first word is never clipped.
+  let onset = segs[lo][0];
+  const floor = Math.max(peak * 0.01, 12);
+  while (onset > 0 && segs[lo][0] - onset < 15 && rms[onset - 1] > floor) onset--;
+  const startSample = Math.max(0, onset * FRAME - lead);
   const endSample = Math.min(n, (segs[hi][1] + 1) * FRAME + lead * 2);
   const len = endSample - startSample;
 
@@ -125,4 +130,67 @@ export function bytesToBase64(bytes: Uint8Array): string {
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
+}
+
+/**
+ * Bring a clip to the same speech level as every other clip, so volume never jumps between lines or slides.
+ * Level is measured over the speech only (pauses do not count). Peaks are rounded off softly, never hard-clipped.
+ */
+export const TARGET_SPEECH_RMS_DBFS = -20;
+export function normalizeLoudness(pcm: Uint8Array): Uint8Array {
+  const n = Math.floor(pcm.length / 2);
+  if (n < FRAME * 3) return pcm;
+  const v = new DataView(pcm.buffer, pcm.byteOffset, n * 2);
+  const frames = Math.floor(n / FRAME);
+  const rms = new Float32Array(frames);
+  for (let f = 0; f < frames; f++) {
+    let sq = 0;
+    for (let i = f * FRAME; i < (f + 1) * FRAME; i++) {
+      const x = v.getInt16(i * 2, true);
+      sq += x * x;
+    }
+    rms[f] = Math.sqrt(sq / FRAME);
+  }
+  const sorted = Array.from(rms).sort((a, b) => a - b);
+  const p90 = sorted[Math.floor(sorted.length * 0.9)];
+  const gate = Math.max(p90 * 0.05, 20);
+  let power = 0;
+  let count = 0;
+  for (let f = 0; f < frames; f++) {
+    if (rms[f] > gate) {
+      power += rms[f] * rms[f];
+      count++;
+    }
+  }
+  if (!count) return pcm;
+  const speechRms = Math.sqrt(power / count);
+  const gain = (32768 * Math.pow(10, TARGET_SPEECH_RMS_DBFS / 20)) / speechRms;
+  const knee = 0.7;
+  const out = new Uint8Array(n * 2);
+  const o = new DataView(out.buffer);
+  for (let i = 0; i < n; i++) {
+    let y = (v.getInt16(i * 2, true) * gain) / 32768;
+    const a = Math.abs(y);
+    if (a > knee) y = Math.sign(y) * (knee + (1 - knee) * Math.tanh((a - knee) / (1 - knee)));
+    o.setInt16(i * 2, Math.round(Math.max(-1, Math.min(1, y)) * 32767), true);
+  }
+  return out;
+}
+
+/** 24 kHz 16-bit mono PCM to 16 kHz, for the language check (smaller upload). */
+export function downsampleTo16k(pcm24: Uint8Array): Uint8Array {
+  const n = Math.floor(pcm24.length / 2);
+  const src = new DataView(pcm24.buffer, pcm24.byteOffset, n * 2);
+  const m = Math.floor((n * 2) / 3);
+  const out = new Uint8Array(m * 2);
+  const dst = new DataView(out.buffer);
+  for (let i = 0; i < m; i++) {
+    const pos = i * 1.5;
+    const i0 = Math.floor(pos);
+    const frac = pos - i0;
+    const a = src.getInt16(Math.min(i0, n - 1) * 2, true);
+    const b = src.getInt16(Math.min(i0 + 1, n - 1) * 2, true);
+    dst.setInt16(i * 2, Math.round(a + (b - a) * frac), true);
+  }
+  return out;
 }

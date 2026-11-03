@@ -29,7 +29,7 @@ export default async (req: Request): Promise<Response> => {
       body: JSON.stringify({
         model: VISUALS_MODEL,
         max_tokens: VISUALS_MAX_OUTPUT_TOKENS,
-        system: buildSystem(),
+        system: buildSystem(job.input.lang),
         messages: [{ role: 'user', content: buildUserText(job.input) }],
       }),
     });
