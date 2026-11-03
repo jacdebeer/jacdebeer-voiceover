@@ -218,12 +218,14 @@ function rTrialBalance(b){
 }
 
 /* one optional emoji, drawn before a label; anything longer than a short emoji sequence is ignored */
-function ico(x){ var t = (typeof x === 'string') ? x.trim() : ''; return (t && t.length <= 8) ? '<span class="ico">' + esc(t) + '</span>' : ''; }
+function ico(x, size){ var t = (typeof x === 'string') ? x.trim() : ''; return (t && t.length <= 8) ? '<span class="ico' + (size ? ' ' + size : '') + '">' + esc(t) + '</span>' : ''; }
 
 function rText(b){
   var e = el('div','callout ' + (b.tone||''));
   e.setAttribute('data-reveal','');
-  e.innerHTML = (b.heading ? '<b>' + esc(b.heading) + '</b>' : '') + esc(b.body||'').replace(/\n/g,'<br>');
+  var inner = (b.heading ? '<b>' + esc(b.heading) + '</b>' : '') + esc(b.body||'').replace(/\n/g,'<br>');
+  e.innerHTML = ico(b.icon) ? '<span class="cicon">' + ico(b.icon) + '</span><span class="ctxt">' + inner + '</span>' : inner;
+  if(ico(b.icon)) e.classList.add('withIcon');
   return e;
 }
 
@@ -232,7 +234,7 @@ function rFlow(b){
   (b.steps||[]).forEach(function(s, i){
     var st = el('div','step');
     st.setAttribute('data-reveal','');
-    st.innerHTML = (i ? '<span class="arw">\u2192</span>' : '') + '<b>' + ico(s.icon) + esc(s.label||'') + '</b>' + esc(s.text||'');
+    st.innerHTML = (ico(s.icon) ? '<span class="sicon">' + ico(s.icon) + '</span>' : '') + (i ? '<span class="arw">\u2192</span>' : '') + '<b>' + esc(s.label||'') + '</b>' + esc(s.text||'');
     f.appendChild(st);
   });
   return f;
@@ -308,7 +310,7 @@ function renderBeat(){
   var b = beats[bi] || {};
   var st = document.getElementById('pStage');
   st.innerHTML = '';
-  st.appendChild(el('h2', null, '<span class="num">' + (bi+1) + '.</span>' + esc(b.title||'')));
+  st.appendChild(el('h2', null, ico(b.icon, 'big') + '<span class="num">' + (bi+1) + '.</span>' + esc(b.title||'')));
   if(b.note) st.appendChild(el('div','stageNote', esc(b.note)));
   (b.blocks||[]).forEach(function(blk){
     var fn = RENDER[blk.type];
@@ -497,7 +499,7 @@ function navPaint(){
   });
 }
 
-document.getElementById('pTitle').textContent = DATA.title || '';
+document.getElementById('pTitle').innerHTML = ico(DATA.icon, 'big') + esc(DATA.title || '');
 document.getElementById('pSub').textContent = DATA.subtitle || '';
 var sc = DATA.scenario || {};
 document.getElementById('pMeta').textContent = [sc.entity, sc.period, sc.vat].filter(Boolean).join(' \u00B7 ');

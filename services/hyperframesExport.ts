@@ -127,7 +127,7 @@ function compositionHtml(
       (b, i) => `
   <section class="clip beat" id="beat${i}" data-start="${num(b.start)}" data-duration="${num(b.end - b.start)}" data-track-index="1">
     <div class="beatInner" style="zoom:${zoom[i] ?? 1}">
-      <div class="head"><h1>${esc(String(data.title || ''))}</h1></div>
+      <div class="head"><h1>${data.icon && String(data.icon).trim().length <= 8 ? `<span class="ico big">${esc(String(data.icon).trim())}</span>` : ''}${esc(String(data.title || ''))}</h1></div>
       <div class="stage" id="stage${i}">${b.html}</div>
     </div>
   </section>`,

@@ -135,3 +135,17 @@ table.t tr.tot td.num{border-bottom:3px double var(--ink)}
 .ficon{display:block;font-size:1.5rem;line-height:1.1;margin-bottom:2px}
 .ficon .ico{margin:0}
 .chg .ctext b .ico{font-size:1.15em;margin-right:.3em}
+
+/* emoji: big enough to read at a glance */
+.ico.big{font-size:1.35em;margin-right:.3em;vertical-align:-.06em}
+#pTitle .ico.big{font-size:1.2em}
+.flow .step .sicon{display:block;font-size:2.1rem;line-height:1.1;margin-bottom:4px}
+.flow .step .sicon .ico{margin:0}
+.callout.withIcon{display:flex;align-items:center;gap:14px}
+.callout .cicon{font-size:2rem;line-height:1}
+.callout .cicon .ico{margin:0}
+.callout .ctxt{flex:1}
+.card2 b .ico{font-size:1.6em;margin-right:.3em;vertical-align:-.12em}
+.chg .ctext b .ico{font-size:1.5em;margin-right:.3em;vertical-align:-.1em}
+.ficon{font-size:2rem}
+.flow .step .arw{position:absolute;top:10px;right:12px;margin:0;font-size:1.3rem}
