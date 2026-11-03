@@ -144,16 +144,26 @@ async function ttsElevenLabs(body: any): Promise<Response> {
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
     console.error('ElevenLabs TTS failed:', res.status, detail.slice(0, 500));
-    if (res.status === 429) {
-      return json({ error: 'ElevenLabs quota or rate limit reached.', isQuotaExceeded: true, fallbackToBrowser: true }, 429);
-    }
     let message = `ElevenLabs could not generate audio (${res.status}).`;
+    let statusCode = '';
     try {
       const parsed = JSON.parse(detail);
       const d = parsed?.detail;
       if (typeof d === 'string') message = d;
       else if (typeof d?.message === 'string') message = d.message;
+      if (typeof d?.status === 'string') statusCode = d.status;
     } catch { /* keep default message */ }
+    // A credit limit (account or API key) comes back as quota_exceeded, not always as 429.
+    if (res.status === 429 || statusCode === 'quota_exceeded' || /quota|credits/i.test(message)) {
+      return json(
+        {
+          error: `ElevenLabs credits: ${message} Raise this API key's credit limit or top up in ElevenLabs, or choose a Gemini voice.`,
+          isQuotaExceeded: true,
+          fallbackToBrowser: true,
+        },
+        429,
+      );
+    }
     return json({ error: message }, 502);
   }
   const audioBase64 = Buffer.from(await res.arrayBuffer()).toString('base64');
@@ -427,8 +437,10 @@ async function voiceCheck(body: any): Promise<Response> {
   form.append('file', new Blob([Buffer.concat([header, pcm])], { type: 'audio/wav' }), 'take.wav');
   const res = await fetch(`${ELEVENLABS_BASE}/v1/speech-to-text`, { method: 'POST', headers: { 'xi-api-key': apiKey }, body: form });
   if (!res.ok) {
-    console.error('Scribe failed:', res.status, (await res.text().catch(() => '')).slice(0, 300));
-    return json({ checked: false, reason: `speech-to-text returned ${res.status}` });
+    const detail = await res.text().catch(() => '');
+    console.error('Scribe failed:', res.status, detail.slice(0, 300));
+    const credits = /quota|credits/i.test(detail);
+    return json({ checked: false, reason: credits ? 'ElevenLabs credit limit reached' : `speech-to-text returned ${res.status}` });
   }
   const data: any = await res.json();
   const language = String(data.language_code ?? '').toLowerCase();

@@ -52,7 +52,7 @@ export async function generateSpeech(
   if (!response.ok) {
     const errData = await response.json().catch(() => ({}));
     if (response.status === 429 || errData.isQuotaExceeded) {
-      const quotaErr: any = new Error("QUOTA_EXCEEDED");
+      const quotaErr: any = new Error(errData.error || "QUOTA_EXCEEDED");
       quotaErr.isQuotaExceeded = true;
       throw quotaErr;
     }
@@ -104,7 +104,7 @@ export interface VoiceCheck {
 /** Asks the server which language the take sounds like (ElevenLabs Scribe). Never throws: an unavailable check just says so. */
 export async function checkVoiceLanguage(base64Pcm24k: string, expectedText: string): Promise<Omit<VoiceCheck, 'attempts'>> {
   try {
-    const pcm16 = downsampleTo16k(decodeBase64(base64Pcm24k)).slice(0, 16000 * 2 * 90); // first 90 seconds is plenty
+    const pcm16 = downsampleTo16k(decodeBase64(base64Pcm24k)).slice(0, 16000 * 2 * 45); // the first 45 seconds is enough to tell the language, and keeps the check cheap
     const res = await fetch('/api/voice-check', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -118,22 +118,24 @@ export async function checkVoiceLanguage(base64Pcm24k: string, expectedText: str
   }
 }
 
-const MAX_DUTCH_RETRIES = 2;
-
 /**
- * The Dutch filter. Voices an Afrikaans text, asks which language it sounds like, and if it sounds Dutch voices it again
- * (a stricter instruction, a different sample) up to twice. English text is returned as it is.
+ * The Dutch filter. Voices an Afrikaans text and asks which language it sounds like. Every retry voices the whole text again,
+ * so it costs the same credits again: a Gemini voice gets one retry, an ElevenLabs voice none (it is already told the
+ * language directly, and its credits are the scarce ones). English text is returned as it is.
  */
 export async function generateCheckedSpeech(
   voice: VoiceOption,
   text: string,
-  isAfrikaans: boolean
+  isAfrikaans: boolean,
+  options: { skipCheck?: boolean } = {}
 ): Promise<{ base64: string; check: VoiceCheck }> {
   let base64 = await generateSpeechForVoice(voice, text, isAfrikaans, 0);
   if (!isAfrikaans) return { base64, check: { checked: false, heardDutch: false, attempts: 1, reason: 'not Afrikaans' } };
+  if (options.skipCheck) return { base64, check: { checked: false, heardDutch: false, attempts: 1, reason: 'not checked' } };
+  const maxRetries = voice.provider === 'elevenlabs' ? 0 : 1;
   let attempts = 1;
   let check = await checkVoiceLanguage(base64, text);
-  while (check.checked && check.heardDutch && attempts <= MAX_DUTCH_RETRIES) {
+  while (check.checked && check.heardDutch && attempts <= maxRetries) {
     base64 = await generateSpeechForVoice(voice, text, isAfrikaans, attempts);
     attempts++;
     check = await checkVoiceLanguage(base64, text);

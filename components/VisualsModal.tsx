@@ -71,7 +71,7 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
       onEntry({ data, audio, report, slideText, voiceId: voice.id, lang: textLang, mode });
     } catch (e: any) {
       if (e?.name === 'AbortError') setError('Stopped.');
-      else if (e?.isQuotaExceeded) setError('The narrator voice has reached its quota. Try another voice, or wait and retry.');
+      else if (e?.isQuotaExceeded) setError(e.message && e.message !== 'QUOTA_EXCEEDED' ? e.message : 'The narrator voice has reached its quota. Try another voice, or wait and retry.');
       else setError(e?.message || 'Something went wrong.');
     } finally {
       setPhase('idle');

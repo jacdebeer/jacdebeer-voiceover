@@ -71,3 +71,11 @@ The Slide visuals window has two voice-over modes:
 In Explain mode the repeat repair removes only sentences that repeat earlier ones, and the script check is not shown. The voice is still one continuous take, cut into lines.
 
 The video export also checks that wide blocks (T-accounts, journals) fit inside the frame and their own boxes, not just that they are not too tall.
+
+### ElevenLabs credits
+
+Every ElevenLabs voice call spends credits, and an API key can have its own credit limit (set under API keys in ElevenLabs; a key called GSA-Coursevoice had 20 000). To keep spending down:
+- An ElevenLabs voice voices a slide once. A Dutch-sounding result is reported, not regenerated (the language is already sent to ElevenLabs). A Gemini voice gets one retry.
+- If the one-take split is only somewhat sure, an ElevenLabs take is kept instead of voicing the slide again line by line. The line-by-line fallback no longer checks each line.
+- The language check samples the first 45 seconds. It also uses ElevenLabs credits (speech to text), even for a Gemini voice.
+- When the key runs out, the error says so ("ElevenLabs credits: ... Raise this API key's credit limit or top up in ElevenLabs, or choose a Gemini voice").

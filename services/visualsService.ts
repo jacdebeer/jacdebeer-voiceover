@@ -86,7 +86,9 @@ export async function narrateLines(
       if (signal?.aborted) throw new DOMException('Stopped', 'AbortError');
       onProgress(2, 3, 'split');
       const split = splitTake(decodeBase64(base64), lines);
-      if (split.confidence >= 0.6 && split.segments.length === lines.length) {
+      // Voicing the slide again line by line costs the same credits again. With ElevenLabs a less certain split is kept instead.
+      const minConfidence = voice.provider === 'elevenlabs' ? 0.35 : 0.6;
+      if (split.confidence >= minConfidence && split.segments.length === lines.length) {
         for (let i = 0; i < lines.length; i++) {
           if (!audio[lines[i]]) audio[lines[i]] = await toWavUri(finishSegment(normalizeLoudness(split.segments[i])));
         }
@@ -111,8 +113,8 @@ export async function narrateLines(
     while (next < unique.length) {
       if (signal?.aborted) throw new DOMException('Stopped', 'AbortError');
       const line = unique[next++];
-      const { base64, check: c } = await generateCheckedSpeech(voice, line, isAfrikaans);
-      check = check && c.heardDutch ? c : check ?? c;
+      // the whole take was already checked; one speech-to-text call per line would cost far more than it tells
+      const { base64 } = await generateCheckedSpeech(voice, line, isAfrikaans, { skipCheck: true });
       audio[line] = await toWavUri(cleanClip(decodeBase64(base64)));
       onProgress(++done, unique.length, 'lines');
     }
