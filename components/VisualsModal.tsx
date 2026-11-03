@@ -7,7 +7,7 @@ import { buildHyperframesZip, buildHyperframesPreviewHtml } from '../services/hy
 import { isAfrikaansText } from '../utils/language';
 import { saveLesson, embedCode, compressAudio } from '../services/libraryService';
 import { LessonChat } from './LessonChat';
-import { needsNewVoice, ChatProposal } from '../services/chatService';
+import { needsNewVoice, ChatProposal, LessonTimeline, LessonPos } from '../services/chatService';
 
 /** What is kept for one slide while the page stays open. */
 export interface VisualsEntry {
@@ -87,6 +87,19 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
 
   // Earlier versions of this slide, so a chat change can be undone (the last three are kept).
   const [history, setHistory] = useState<VisualsEntry[]>([]);
+  // The player reports where the video is and when each line is said, so the chat can talk in times instead of beat numbers.
+  const playerRef = useRef<HTMLIFrameElement>(null);
+  const [timeline, setTimeline] = useState<LessonTimeline | null>(null);
+  const [pos, setPos] = useState<LessonPos | null>(null);
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (!playerRef.current || e.source !== playerRef.current.contentWindow) return;
+      if (e.data?.lessonTimeline) setTimeline(e.data.lessonTimeline as LessonTimeline);
+      if (e.data?.lessonPos) setPos(e.data.lessonPos as LessonPos);
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
   const applyEdit = async (proposal: ChatProposal) => {
     if (!entry) return;
     const before = entry;
@@ -368,7 +381,7 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
                   {af ? 'Die beelde verskyn hier.' : 'The visuals appear here.'}
                 </div>
               ) : view === 'player' ? (
-                <iframe title="Slide visuals" srcDoc={html} className="w-full h-full border-0" />
+                <iframe ref={playerRef} title="Slide visuals" srcDoc={html} className="w-full h-full border-0" onLoad={() => playerRef.current?.contentWindow?.postMessage('lesson-timeline?', '*')} />
               ) : videoHtml ? (
                 <iframe title="HyperFrames video preview" srcDoc={videoHtml} className="w-full h-full border-0 bg-slate-900" />
               ) : (
@@ -383,7 +396,7 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
           {entry && (
             <div className="md:w-80 flex-none h-[60vh] md:h-auto border-t md:border-t-0 md:border-l border-slate-100">
               <LessonChat af={af} lesson={entry.data} lang={entry.lang} mode={entry.mode ?? 'read'} busy={busy}
-                canUndo={history.length > 0} onApply={applyEdit} onUndo={undoEdit} />
+                canUndo={history.length > 0} timeline={timeline} pos={pos} onApply={applyEdit} onUndo={undoEdit} />
             </div>
           )}
         </div>

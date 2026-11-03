@@ -4,7 +4,7 @@ import { getStore } from '@netlify/blobs';
 import type { Config } from '@netlify/functions';
 import { embedRoute, libraryRoute } from '../lib/library.mts';
 import { VISUALS_STORE, LEVELS, type Level, type Mode } from '../lib/visualsJob.mts';
-import { CHAT_STORE, MAX_LESSON_CHARS, MAX_MESSAGE_CHARS } from '../lib/chatJob.mts';
+import { CHAT_STORE, MAX_LESSON_CHARS, MAX_MESSAGE_CHARS, cleanTimeline } from '../lib/chatJob.mts';
 // @ts-ignore - plain JS module
 import { afrikaansGlossaryPrompt } from '../lib/afrikaansTerms.mjs';
 // @ts-ignore - plain JS module
@@ -421,7 +421,7 @@ async function visualsRoute(req: Request, route: string, userKey: string): Promi
     const mode = body?.mode === 'explain' ? 'explain' : 'read';
 
     const jobId = crypto.randomUUID();
-    await getStore(CHAT_STORE).setJSON(jobId, { status: 'queued', owner: userKey, input: { lesson, messages, lang, mode }, createdAt: Date.now() });
+    await getStore(CHAT_STORE).setJSON(jobId, { status: 'queued', owner: userKey, input: { lesson, messages, lang, mode, timeline: cleanTimeline(body?.timeline), now: typeof body?.now === 'number' && isFinite(body.now) ? Math.max(0, Math.min(body.now, 36000)) : null }, createdAt: Date.now() });
     await fetch(new URL('/.netlify/functions/chat-background', req.url), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

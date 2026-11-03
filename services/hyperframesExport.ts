@@ -93,16 +93,21 @@ async function plan(data: LessonData, audio: Record<string, string>) {
 
       const cap = speak(b.caption || '');
       if (cap) t += cap + LINE_GAP;
-      const narration = b.narration ?? [];
-      for (let k = 0; k < steps; k++) {
-        plan.reveals.push({ index: k, at: t });
-        const d = speak(narration[k] || '');
-        t += d ? d + LINE_GAP : SILENT_STEP;
-      }
-      // Lines beyond the revealed rows are not spoken by the live player; the video speaks them so the script is complete.
-      for (let k = steps; k < narration.length; k++) {
-        const d = speak(narration[k] || '');
+      // The same grouping as the live player: each narration line appears together with the elements it talks about.
+      const groups: { from: number; to: number; lines: string[] }[] = win.groups ?? [];
+      const intro = !steps ? (b.narration ?? []).filter(Boolean) : [];
+      for (const line of intro) {
+        const d = speak(line);
         if (d) t += d + LINE_GAP;
+      }
+      for (const g of groups) {
+        for (let k = g.from; k < g.to; k++) plan.reveals.push({ index: k, at: t });
+        let spoke = false;
+        for (const line of g.lines) {
+          const d = speak(line);
+          if (d) { t += d + LINE_GAP; spoke = true; }
+        }
+        if (!spoke) t += SILENT_STEP;
       }
       t += BEAT_HOLD;
       plan.end = t;
