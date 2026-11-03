@@ -50,6 +50,12 @@ const EXPLAIN_RULE = [
   '   - Omit "quiz" entirely: it would be silent.',
 ].join('\n');
 
+// Every account a slide names is drawn, also on introduction, overview and summary slides.
+const COVERAGE_RULE = [
+  '',
+  'K. ACCOUNT COVERAGE. First list every account the text names (for example Gewone Aandelekapitaal, Behoue Inkomste, Aanwendingsrekening, Inkomstebelasting, Dividende betaalbaar, Bank). Every one of them must be drawn at least once in the lesson as a "t_accounts" account with its normal side and at least one typical entry, with figures that agree with the rest of the lesson and with any SHARED EXAMPLE. This applies to introduction, overview, comparison and summary beats too, where you would otherwise show only cards, a flow or a formula. Cards, flows and formulas may add to the T-accounts but never replace them. An overview or summary beat may show up to 3 accounts side by side in one "t_accounts" block, each with one entry or its closing balance. Do not leave an account that the text names without a T-account.',
+].join('\n');
+
 // Text must fit the boxes it is drawn in.
 const FIT_RULE = [
   '',
@@ -58,7 +64,7 @@ const FIT_RULE = [
 
 export function buildSystem(lang: 'en' | 'af' = 'en', mode: Mode = 'read'): string {
   const body = mode === 'explain' ? SYSTEM + '\n' + EXPLAIN_RULE : SYSTEM + '\n' + SLIDE_TEXT_RULE;
-  return body + '\n' + ICON_RULE + FIT_RULE + (lang === 'af' ? '\n\n' + afrikaansGlossaryPrompt() : '');
+  return body + '\n' + ICON_RULE + COVERAGE_RULE + FIT_RULE + (lang === 'af' ? '\n\n' + afrikaansGlossaryPrompt() : '');
 }
 
 export function buildUserText(opts: { text: string; lang: 'en' | 'af'; level: Level; currency: string; mode?: Mode; context?: string }): string {
