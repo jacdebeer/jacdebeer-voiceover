@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Wand2, Loader, Download, Film, AlertCircle, CheckCircle2, Volume2 } from 'lucide-react';
+import { X, Wand2, Loader, Download, Film, Save, AlertCircle, CheckCircle2, Volume2 } from 'lucide-react';
 import { VoiceOption } from '../types';
 import { LessonData, buildPlayerHtml, checkScript } from '../services/lessonPlayer';
 import { generateVisuals, narrateLines, VisualsLevel, VisualsMode, NarrationReport } from '../services/visualsService';
 import { buildHyperframesZip, buildHyperframesPreviewHtml } from '../services/hyperframesExport';
 import { isAfrikaansText } from '../utils/language';
+import { saveLesson, embedCode } from '../services/libraryService';
 
 /** What is kept for one slide while the page stays open. */
 export interface VisualsEntry {
@@ -99,6 +100,28 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
   }, [view, entry, slideNumber]);
 
   const [exporting, setExporting] = useState(false);
+  const [saving, setSaving] = useState<{ done: number; total: number; phase: string } | null>(null);
+  const [savedAs, setSavedAs] = useState<{ title: string; token: string } | null>(null);
+  useEffect(() => setSavedAs(null), [entry]);
+  const saveToLibrary = async () => {
+    if (!entry) return;
+    const suggested = `${af ? 'Skyfie' : 'Slide'} ${slideNumber}: ${String(entry.data.title || '').trim() || (af ? 'Les' : 'Lesson')}`;
+    const title = window.prompt(af ? 'Naam vir hierdie les in die biblioteek:' : 'Name for this lesson in the library:', suggested);
+    if (!title || !title.trim()) return;
+    setError(null);
+    setSaving({ done: 0, total: 0, phase: 'create' });
+    try {
+      const r = await saveLesson(
+        { title: title.trim(), slideLabel: `${af ? 'Skyfie' : 'Slide'} ${slideNumber}`, voiceLabel: voice.label, lang: entry.lang, mode: entry.mode, data: entry.data, audio: entry.audio },
+        (done, total, phase) => setSaving({ done, total, phase }),
+      );
+      setSavedAs({ title: title.trim(), token: r.token });
+    } catch (e: any) {
+      setError(e?.message || 'Could not save the lesson.');
+    } finally {
+      setSaving(null);
+    }
+  };
   const exportVideo = async () => {
     if (!entry) return;
     setExporting(true);
@@ -256,6 +279,18 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
               className="w-full py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
               <Download size={13} /> {af ? 'Laai .html af' : 'Download standalone .html'}
             </button>
+            <button onClick={saveToLibrary} disabled={!entry || busy || !!saving}
+              className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+              {saving ? <Loader className="animate-spin" size={13} /> : <Save size={13} />}
+              {saving
+                ? (saving.phase === 'audio' ? (af ? `Stoor klank ${saving.done} van ${saving.total}…` : `Saving audio ${saving.done} of ${saving.total}…`) : (af ? 'Stoor…' : 'Saving…'))
+                : (af ? 'Stoor in biblioteek' : 'Save to library')}
+            </button>
+            {savedAs && (
+              <div className="rounded-xl p-2.5 text-[10px] bg-emerald-50 border border-emerald-100 text-emerald-800 leading-snug">
+                {af ? `Gestoor as "${savedAs.title}". Maak dit oop onder Biblioteek in die kopstuk om dit te deel of in te bed.` : `Saved as "${savedAs.title}". Open it under Library in the header to share or embed it.`}
+              </div>
+            )}
             <button onClick={exportVideo} disabled={!entry || busy || exporting}
               className="w-full py-2 rounded-xl border border-violet-200 text-violet-700 text-xs font-bold hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
               {exporting ? <Loader className="animate-spin" size={13} /> : <Film size={13} />} {af ? 'HyperFrames-video projek (.zip)' : 'HyperFrames video project (.zip)'}

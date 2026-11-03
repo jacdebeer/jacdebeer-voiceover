@@ -2,6 +2,7 @@ import { GoogleGenAI, Modality } from '@google/genai';
 import { getUser } from '@netlify/identity';
 import { getStore } from '@netlify/blobs';
 import type { Config } from '@netlify/functions';
+import { embedRoute, libraryRoute } from '../lib/library.mts';
 import { VISUALS_STORE, LEVELS, type Level, type Mode } from '../lib/visualsJob.mts';
 // @ts-ignore - plain JS module
 import { afrikaansGlossaryPrompt } from '../lib/afrikaansTerms.mjs';
@@ -465,6 +466,16 @@ export default async (req: Request): Promise<Response> => {
   if (route === '/api/health' && req.method === 'GET') {
     return json({ status: 'ok', timestamp: Date.now(), keyConfigured: Boolean(process.env.GEMINI_API_KEY), elevenLabsConfigured: Boolean(process.env.ELEVENLABS_API_KEY) });
   }
+  // Public embed of a lesson its owner has chosen to share: the page and its audio, no sign-in.
+  if (route.startsWith('/api/embed/')) {
+    try {
+      const embed = await embedRoute(req, route);
+      if (embed) return embed;
+    } catch (error) {
+      console.error('Embed request failed:', error);
+      return new Response('Could not load this lesson.', { status: 502 });
+    }
+  }
   // Everything below needs a signed-in (invited) user, because each call spends Gemini quota.
   const user = await getUser();
   if (!user) return json({ error: 'Please sign in.' }, 401);
@@ -485,6 +496,13 @@ export default async (req: Request): Promise<Response> => {
       console.error('ElevenLabs voice list failed:', error);
       return json({ error: 'Could not load ElevenLabs voices.' }, 502);
     }
+  }
+  try {
+    const library = await libraryRoute(req, route, user);
+    if (library) return library;
+  } catch (error) {
+    console.error('Library request failed:', error);
+    return json({ error: 'Could not reach the lesson library.' }, 502);
   }
   try {
     const visuals = await visualsRoute(req, route, user.id);

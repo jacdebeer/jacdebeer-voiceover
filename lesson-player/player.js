@@ -414,7 +414,12 @@ function say(text, done){
     var pr = audioEl.play();
     if(pr && pr.catch) pr.catch(function(){ audioEl = null; banner('cloud', voiceErr); finish(); });
   };
-  if(NARR[text]){ banner(null, ''); play(NARR[text].indexOf('data:') === 0 ? NARR[text] : 'data:audio/mpeg;base64,' + NARR[text]); return; }
+  if(NARR[text]){
+    var src = NARR[text];
+    /* a data: URI, a hosted file (http, blob or a path) or plain base64 mp3 */
+    if(!/^(data:|https?:|blob:|\/)/.test(src)) src = 'data:audio/mpeg;base64,' + src;
+    banner(null, ''); play(src); return;
+  }
   /* embedded-audio mode (voice-over studio): no server voice to fall back on, so a line without audio is shown silently */
   if(DATA.embeddedAudioOnly){ finish(); return; }
   var token = sayToken;
