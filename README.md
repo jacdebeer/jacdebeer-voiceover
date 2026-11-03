@@ -79,3 +79,14 @@ Every ElevenLabs voice call spends credits, and an API key can have its own cred
 - If the one-take split is only somewhat sure, an ElevenLabs take is kept instead of voicing the slide again line by line. The line-by-line fallback no longer checks each line.
 - The language check samples the first 45 seconds. It also uses ElevenLabs credits (speech to text), even for a Gemini voice.
 - When the key runs out, the error says so ("ElevenLabs credits: ... Raise this API key's credit limit or top up in ElevenLabs, or choose a Gemini voice").
+
+### Lesson library (Netlify Database)
+
+Finished lessons can be saved, reopened, downloaded and embedded. Open **Slide visuals**, build a lesson, then **Save to library**. The **Library** button in the header lists your saved lessons: play one, rename it, download it as a standalone .html file, delete it, or share it.
+
+- **Storage.** Netlify Database (Postgres) through `@netlify/database`. The tables are created by `netlify/database/migrations/20261103120000_create_lesson_library.sql`, which Netlify applies on deploy. A database is provisioned automatically on the first deploy that includes the package; it needs a credit-based Netlify plan.
+- **Why not one big file.** A function request is limited to about 6 MB and a finished lesson file can be 12 MB. So a lesson is saved as a small JSON document plus one MP3 clip per spoken line (compressed about 7 times, in the browser, with `@breezystack/lamejs`), uploaded one clip at a time. A lesson only appears in the library once every clip has arrived, and a failed save removes what was uploaded.
+- **Who can see it.** Only the person who saved a lesson can list, open, rename, share or delete it.
+- **Embedding.** Tick **Public embed link** on a lesson to get an iframe code for your site. The embed page is small and plays the audio from the app. Unticking it stops the link on the next visit. The embed routes are `/api/embed/<token>` and `/api/embed/<token>/audio/<n>`, they need no sign-in, and they work only for a lesson that is public. The audio supports byte-range requests, which Safari needs. For a very busy site, an MP4 on a video host is the better choice.
+- **Download.** The standalone .html built from a saved lesson carries its audio inside it (MP3, about 1 MB for two minutes), so it is far smaller than before.
+- Deploy previews get a copy of the production database, so saved lessons are visible there. Do not share a preview link publicly.

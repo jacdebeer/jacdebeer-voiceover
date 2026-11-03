@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { 
   Mic, BookOpen, Sparkles, AlertCircle, ArrowRightLeft, ChevronLeft, ChevronRight, 
   ScanSearch, FileUp, Gauge, Volume2, Loader, Square, Layers, Wand2, Trash2, 
-  X, HelpCircle, CheckCircle2, Plus, Scissors, Combine, ArrowBigRightDash, 
+  X, HelpCircle, Library, CheckCircle2, Plus, Scissors, Combine, ArrowBigRightDash, 
   Radio, FileText, AudioWaveform, MessageSquare
 } from 'lucide-react';
 import { VoiceName, VOICE_OPTIONS, AudioState, CoursePage, VoiceOption } from './types';
@@ -15,6 +15,7 @@ import { Controls } from './components/Controls';
 import { TranscriptionPanel } from './components/TranscriptionPanel';
 import { LiveConversationModal } from './components/LiveConversationModal';
 import { VisualsModal, VisualsEntry } from './components/VisualsModal';
+import { LibraryModal } from './components/LibraryModal';
 import { isAfrikaansText } from './utils/language';
 
 // Live chat needs the WebSocket server in server.ts, which Netlify cannot host.
@@ -176,6 +177,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('studio');
   const [isLiveModalOpen, setIsLiveModalOpen] = useState(false);
   const [showVisuals, setShowVisuals] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
   // Visuals built for each slide, kept until the page is closed.
   const [visualsBySlide, setVisualsBySlide] = useState<Record<number, VisualsEntry>>({});
   const [language, setLanguage] = useState<Language>(() => {
@@ -897,6 +899,14 @@ const App: React.FC = () => {
 
         {/* Global Controls & Language Switch */}
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowLibrary(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200"
+            title={language === 'af' ? 'Gestoorde lesse' : 'Saved lessons'}
+          >
+            <Library size={14} />
+            <span>{language === 'af' ? 'Biblioteek' : 'Library'}</span>
+          </button>
           <button 
             onClick={() => setCurrentStep(1)} 
             className="text-slate-400 hover:text-indigo-600 transition-colors p-1.5 rounded-lg hover:bg-slate-100" 
@@ -1275,6 +1285,8 @@ const App: React.FC = () => {
         onInsertToSlide={handleInsertLiveTextToSlide}
       />
       )}
+
+      {showLibrary && <LibraryModal language={language} onClose={() => setShowLibrary(false)} />}
 
       {showVisuals && (
         <VisualsModal
