@@ -69,8 +69,16 @@ function numbersToWords(text) {
 }
 
 /** Text for the voice. lang is 'af' or 'en'. */
-export function forSpeech(text, lang = 'af') {
+export function forSpeech(text, lang = 'af', extra = {}) {
   let t = text;
+  // Per-lesson spellings the user asked for in the chat ({ word: howToSay }). Applied first, whole words only.
+  if (extra && typeof extra === 'object') {
+    for (const [word, say] of Object.entries(extra).slice(0, 50)) {
+      if (typeof say !== 'string' || typeof word !== 'string' || !word.trim() || word.length > 40 || say.length > 60) continue;
+      const esc = word.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      t = t.replace(new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, 'giu'), () => say);
+    }
+  }
   if (lang === 'af') {
     for (const [nl, af] of DUTCH_TO_AFRIKAANS) {
       t = t.replace(new RegExp(`\\b${nl}\\b`, 'gi'), (m) => keepCase(m, af));

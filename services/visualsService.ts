@@ -69,6 +69,7 @@ export async function narrateLines(
   isAfrikaans: boolean,
   onProgress: (done: number, total: number, phase: string) => void,
   signal?: AbortSignal,
+  pronunciations?: Record<string, string>,
 ): Promise<{ audio: Record<string, string>; report: NarrationReport }> {
   const lines = orderedLines(data);
   const audio: Record<string, string> = {};
@@ -81,7 +82,7 @@ export async function narrateLines(
   try {
     const joined = lines.join('\n\n');
     if (joined.length <= 18000) {
-      const { base64, check: c } = await generateCheckedSpeech(voice, joined, isAfrikaans);
+      const { base64, check: c } = await generateCheckedSpeech(voice, joined, isAfrikaans, { pronunciations });
       check = c;
       if (signal?.aborted) throw new DOMException('Stopped', 'AbortError');
       onProgress(2, 3, 'split');
@@ -114,7 +115,7 @@ export async function narrateLines(
       if (signal?.aborted) throw new DOMException('Stopped', 'AbortError');
       const line = unique[next++];
       // the whole take was already checked; one speech-to-text call per line would cost far more than it tells
-      const { base64 } = await generateCheckedSpeech(voice, line, isAfrikaans, { skipCheck: true });
+      const { base64 } = await generateCheckedSpeech(voice, line, isAfrikaans, { skipCheck: true, pronunciations });
       audio[line] = await toWavUri(cleanClip(decodeBase64(base64)));
       onProgress(++done, unique.length, 'lines');
     }

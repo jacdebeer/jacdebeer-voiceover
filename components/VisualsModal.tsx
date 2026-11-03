@@ -6,6 +6,8 @@ import { generateVisuals, narrateLines, VisualsLevel, VisualsMode, NarrationRepo
 import { buildHyperframesZip, buildHyperframesPreviewHtml } from '../services/hyperframesExport';
 import { isAfrikaansText } from '../utils/language';
 import { saveLesson, embedCode } from '../services/libraryService';
+import { LessonChat } from './LessonChat';
+import { needsNewVoice, ChatProposal } from '../services/chatService';
 
 /** What is kept for one slide while the page stays open. */
 export interface VisualsEntry {
@@ -16,6 +18,8 @@ export interface VisualsEntry {
   slideText: string;
   voiceId: string;
   lang: 'en' | 'af';
+  /** changed in the chat, so it no longer matches the slide script word for word */
+  edited?: boolean;
 }
 
 interface Props {
@@ -68,7 +72,8 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
         data = await generateVisuals({ text: slideText, lang: textLang, level, currency, mode }, ctl.signal);
       }
       setPhase('voice');
-      const { audio, report } = await narrateLines(data, voice, textLang === 'af', (done, total, phase) => setProgress({ done, total, phase }), ctl.signal);
+      const { audio, report } = await narrateLines(data, voice, textLang === 'af', (done, total, phase) => setProgress({ done, total, phase }), ctl.signal, data.pronunciations as Record<string, string> | undefined);
+      setHistory([]);
       onEntry({ data, audio, report, slideText, voiceId: voice.id, lang: textLang, mode });
     } catch (e: any) {
       if (e?.name === 'AbortError') setError('Stopped.');
@@ -80,8 +85,44 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
     }
   };
 
+  // Earlier versions of this slide, so a chat change can be undone (the last three are kept).
+  const [history, setHistory] = useState<VisualsEntry[]>([]);
+  const applyEdit = async (proposal: ChatProposal) => {
+    if (!entry) return;
+    const before = entry;
+    const data = proposal.lesson;
+    let next: VisualsEntry;
+    if (needsNewVoice(proposal.changes)) {
+      const ctl = new AbortController();
+      abortRef.current = ctl;
+      setPhase('voice');
+      setProgress({ done: 0, total: 3, phase: 'take' });
+      try {
+        const { audio, report } = await narrateLines(data, voice, before.lang === 'af', (done, total, ph) => setProgress({ done, total, phase: ph }), ctl.signal, data.pronunciations as Record<string, string> | undefined);
+        next = { ...before, data, audio, report, voiceId: voice.id, edited: true };
+      } catch (e: any) {
+        if (e?.name === 'AbortError') throw new Error(af ? 'Gestop. Die les is nie verander nie.' : 'Stopped. The lesson was not changed.');
+        if (e?.isQuotaExceeded) throw new Error(e.message && e.message !== 'QUOTA_EXCEEDED' ? e.message : 'The narrator voice has reached its quota. The lesson was not changed.');
+        throw e;
+      } finally {
+        setPhase('idle');
+        abortRef.current = null;
+      }
+    } else {
+      next = { ...before, data, edited: true };
+    }
+    setHistory((h) => [...h.slice(-2), before]);
+    onEntry(next);
+  };
+  const undoEdit = () => {
+    const prev = history[history.length - 1];
+    if (!prev) return;
+    setHistory((h) => h.slice(0, -1));
+    onEntry(prev);
+  };
+
   const html = useMemo(() => (entry ? buildPlayerHtml(entry.data, entry.audio) : ''), [entry]);
-  const check = useMemo(() => (entry && (entry.mode ?? 'read') === 'read' ? checkScript(entry.data, entry.slideText) : null), [entry]);
+  const check = useMemo(() => (entry && (entry.mode ?? 'read') === 'read' && !entry.edited ? checkScript(entry.data, entry.slideText) : null), [entry]);
 
   const [view, setView] = useState<'player' | 'video'>('player');
   const [videoHtml, setVideoHtml] = useState('');
@@ -300,7 +341,7 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
             </p>
           </div>
 
-          <div className="flex-1 min-h-0 bg-slate-50 flex flex-col">
+          <div className="flex-1 min-h-[50vh] md:min-h-0 min-w-0 bg-slate-50 flex flex-col">
             <div className="flex-none flex gap-1 px-3 pt-2 border-b border-slate-100 bg-white">
               {([['player', af ? 'Speler' : 'Player'], ['video', af ? 'Video (HyperFrames)' : 'Video (HyperFrames)']] as const).map(([id, label]) => (
                 <button key={id} onClick={() => setView(id)}
@@ -326,6 +367,13 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
               )}
             </div>
           </div>
+
+          {entry && (
+            <div className="md:w-80 flex-none h-[60vh] md:h-auto border-t md:border-t-0 md:border-l border-slate-100">
+              <LessonChat af={af} lesson={entry.data} lang={entry.lang} mode={entry.mode ?? 'read'} busy={busy}
+                canUndo={history.length > 0} onApply={applyEdit} onUndo={undoEdit} />
+            </div>
+          )}
         </div>
       </div>
     </div>

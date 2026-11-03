@@ -90,3 +90,12 @@ Finished lessons can be saved, reopened, downloaded and embedded. Open **Slide v
 - **Embedding.** Tick **Public embed link** on a lesson to get an iframe code for your site. The embed page is small and plays the audio from the app. Unticking it stops the link on the next visit. The embed routes are `/api/embed/<token>` and `/api/embed/<token>/audio/<n>`, they need no sign-in, and they work only for a lesson that is public. The audio supports byte-range requests, which Safari needs. For a very busy site, an MP4 on a video host is the better choice.
 - **Download.** The standalone .html built from a saved lesson carries its audio inside it (MP3, about 1 MB for two minutes), so it is far smaller than before.
 - Deploy previews get a copy of the production database, so saved lessons are visible there. Do not share a preview link publicly.
+
+### Chat with Claude to edit a lesson
+Once a slide has visuals, the Slide visuals window shows a chat panel. The user describes a change (a table row, a figure, a title, an emoji, a spoken sentence, a pronunciation) and Claude answers and proposes it. Nothing changes until the user presses Confirm.
+- `POST /api/visuals-chat` queues the job (Netlify Blobs store `chat-jobs`, background function `chat-background`); `GET /api/visuals-chat/:id` returns `{reply, proposal}`. The request carries the lesson JSON and the last 12 chat turns, never audio.
+- Claude proposes an RFC 6902 patch (add, replace, remove only; top-level keys `icon,title,subtitle,currency,labels,scenario,beats,pronunciations`; at most 60 operations). `netlify/lib/lessonPatch.mjs` applies it to a copy and validates the result against the player's block rules. A proposal that does not validate is sent back to Claude once to repair, otherwise it is dropped.
+- A visual-only change keeps the existing audio and costs no voice credits. A change to caption/narration, or to `pronunciations`, voices the whole slide again in one take (to keep one voice, tone and volume), with the selected narrator.
+- `pronunciations` ({"Bates": "Baates"}) are applied to the text sent to the voice only, in `forSpeech`; the screen keeps the written word.
+- The last three versions are kept for Undo while the window stays open. After a chat edit the "matches the slide script" check is hidden, because the lesson no longer matches the slide word for word.
+- Not editable here: the narrator voice (use the Narrator list) and the audio file itself.

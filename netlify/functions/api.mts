@@ -4,6 +4,7 @@ import { getStore } from '@netlify/blobs';
 import type { Config } from '@netlify/functions';
 import { embedRoute, libraryRoute } from '../lib/library.mts';
 import { VISUALS_STORE, LEVELS, type Level, type Mode } from '../lib/visualsJob.mts';
+import { CHAT_STORE, MAX_LESSON_CHARS, MAX_MESSAGE_CHARS } from '../lib/chatJob.mts';
 // @ts-ignore - plain JS module
 import { afrikaansGlossaryPrompt } from '../lib/afrikaansTerms.mjs';
 // @ts-ignore - plain JS module
@@ -125,7 +126,7 @@ async function ttsElevenLabs(body: any): Promise<Response> {
     return json({ error: 'Invalid voice id' }, 400);
   }
   const languageCode = body.isAfrikaans === true ? 'af' : 'en';
-  const spoken: string = forSpeech(text, languageCode);
+  const spoken: string = forSpeech(text, languageCode, body.pronunciations);
   const attempt = Number.isInteger(body.attempt) && body.attempt > 0 ? Math.min(body.attempt, 5) : 0;
 
   // Afrikaans is only supported by the Eleven v3 model.
@@ -187,7 +188,7 @@ async function tts(ai: GoogleGenAI, body: any): Promise<Response> {
         ? ' STRENG: elke woord moet met Afrikaanse uitspraak gesê word. Die g is \'n keelklank, v klink soos f, w soos v, en ui klink soos in Afrikaans, nie soos in Nederlands nie.'
         : '')
     : baseStyle;
-  const spokenText: string = forSpeech(text, isAfrikaans ? 'af' : 'en');
+  const spokenText: string = forSpeech(text, isAfrikaans ? 'af' : 'en', body.pronunciations);
   let targetVoice = VALID_VOICES.includes(voiceName) ? voiceName : 'Kore';
   if (libraryVoice === true) {
     if (typeof voiceName !== 'string' || !LIBRARY_VOICE_ID.test(voiceName)) {
@@ -398,6 +399,51 @@ async function visualsRoute(req: Request, route: string, userKey: string): Promi
       body: JSON.stringify({ jobId }),
     });
     return json({ jobId }, 202);
+  }
+
+  if (route === '/api/visuals-chat' && req.method === 'POST') {
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return json({ error: 'Invalid request body' }, 400);
+    }
+    const lesson = body?.lesson;
+    if (!lesson || typeof lesson !== 'object' || !Array.isArray(lesson.beats) || !lesson.beats.length) return json({ error: 'There is no lesson to change.' }, 400);
+    if (JSON.stringify(lesson).length > MAX_LESSON_CHARS) return json({ error: 'The lesson is too large to edit in the chat.' }, 400);
+    const messages = (Array.isArray(body?.messages) ? body.messages : [])
+      .slice(-12)
+      .map((x: any) => ({ role: x?.role === 'assistant' ? 'assistant' : 'user', text: String(x?.text ?? '').slice(0, MAX_MESSAGE_CHARS) }))
+      .filter((x: any) => x.text.trim());
+    if (!messages.length || messages[messages.length - 1].role !== 'user') return json({ error: 'Type what you want to change.' }, 400);
+    if (!process.env.ANTHROPIC_API_KEY) return json({ error: 'The server is missing its Anthropic API key.' }, 500);
+    const lang = body?.lang === 'af' ? 'af' : 'en';
+    const mode = body?.mode === 'explain' ? 'explain' : 'read';
+
+    const jobId = crypto.randomUUID();
+    await getStore(CHAT_STORE).setJSON(jobId, { status: 'queued', owner: userKey, input: { lesson, messages, lang, mode }, createdAt: Date.now() });
+    await fetch(new URL('/.netlify/functions/chat-background', req.url), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jobId }),
+    });
+    return json({ jobId }, 202);
+  }
+
+  const mc = route.match(/^\/api\/visuals-chat\/([0-9a-f-]{36})$/i);
+  if (mc && req.method === 'GET') {
+    const store = getStore(CHAT_STORE);
+    const job: any = await store.get(mc[1], { type: 'json' });
+    if (!job || job.owner !== userKey) return json({ error: 'Job not found.' }, 404);
+    if (job.status === 'done') {
+      await store.delete(mc[1]);
+      return json({ status: 'done', result: job.result });
+    }
+    if (job.status === 'error') {
+      await store.delete(mc[1]);
+      return json({ status: 'error', error: job.error });
+    }
+    return json({ status: job.status });
   }
 
   const m = route.match(/^\/api\/visuals\/([0-9a-f-]{36})$/i);
