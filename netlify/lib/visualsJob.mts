@@ -30,7 +30,7 @@ const SLIDE_TEXT_RULE = [
 // Emoji make the visuals friendlier. They are drawn on screen only, never spoken, so they stay out of caption and narration.
 const ICON_RULE = [
   '',
-  'I. ICONS. Give every card, formula part, change item and flow step an "icon": ONE emoji that fits it, for example 🧾 source document, 💰 cash or money, 🏦 bank, 📒 journal or ledger, 📊 statements or reports, 🧮 calculation, ✏️ stationery, 📦 stock or inventory, 🏭 production, 🛒 purchases, 🏷️ sales, 📈 increase, 📉 decrease, ⚖️ balance or equation, ✅ correct, ⚠️ warning, 💡 tip, 👤 person or debtor, 🤝 agreement. Use exactly one emoji, never in "caption" or "narration", never several in a row.',
+  'I. ICONS. Emoji make the visuals friendly and easy to read. Give an "icon" (exactly ONE emoji) to: the lesson (top level "icon"), every beat ("icon" next to "title"), every card, formula part, change item, flow step, and every "text" block. Pick accounting emoji that fit the meaning: 🧾 source document or invoice, 💰 cash or money, 🏦 bank, 📒 journal or account, 📚 ledger, 📊 statements or reports, 🧮 calculation, ✏️ stationery, 📦 stock or inventory, 🛒 purchases, 🏷️ sales, 💵 income, 💸 expense, 📈 increase or profit, 📉 decrease or loss, ⚖️ balance or equation, 👤 owner or debtor, 💼 assets, 💳 liabilities, 📥 debit, 📤 credit, 🎯 goal, ✅ correct, ⚠️ warning, 💡 tip, 📆 daily, 🗓️ monthly, 📅 yearly, 🎓 lesson, 🔁 repeated procedure, 🔎 identify, 🗂️ classify. Never put emoji in "caption" or "narration", never two in a row, never the same emoji on every element.',
 ].join('\n');
 
 export function buildSystem(lang: 'en' | 'af' = 'en'): string {
