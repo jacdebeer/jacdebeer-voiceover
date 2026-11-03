@@ -99,3 +99,9 @@ Once a slide has visuals, the Slide visuals window shows a chat panel. The user 
 - `pronunciations` ({"Bates": "Baates"}) are applied to the text sent to the voice only, in `forSpeech`; the screen keeps the written word.
 - The last three versions are kept for Undo while the window stays open. After a chat edit the "matches the slide script" check is hidden, because the lesson no longer matches the slide word for word.
 - Not editable here: the narrator voice (use the Narrator list) and the audio file itself.
+
+### Narration alignment, small screens, download size, labels
+- Narration entry k is spoken when the k-th revealed element appears (a source document, table row, T-account row, totals row, card, tile, chip, flow step or text block each count as one). The prompt tells Claude to count them. If a lesson has more narration entries than elements, the player speaks the extra entries after the last element (and a beat with nothing to reveal speaks them after its caption), so no sentence is skipped.
+- On screens up to 760 px wide each block scrolls sideways instead of clipping a wide table.
+- "Download standalone .html" now encodes the voice-over as MP3 (the 14.7 MB test page became 2.2 MB).
+- The source-document column heading ("Qty" / "Hoev.") and the "To" / "Aan" label follow the lesson language.

@@ -5,7 +5,7 @@ import { LessonData, buildPlayerHtml, checkScript } from '../services/lessonPlay
 import { generateVisuals, narrateLines, VisualsLevel, VisualsMode, NarrationReport } from '../services/visualsService';
 import { buildHyperframesZip, buildHyperframesPreviewHtml } from '../services/hyperframesExport';
 import { isAfrikaansText } from '../utils/language';
-import { saveLesson, embedCode } from '../services/libraryService';
+import { saveLesson, embedCode, compressAudio } from '../services/libraryService';
 import { LessonChat } from './LessonChat';
 import { needsNewVoice, ChatProposal } from '../services/chatService';
 
@@ -182,13 +182,25 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
     }
   };
 
-  const download = () => {
-    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `slide-${slideNumber}-visuals.html`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const [downloading, setDownloading] = useState(false);
+  const download = async () => {
+    if (!entry) return;
+    setDownloading(true);
+    setError(null);
+    try {
+      // MP3 instead of WAV: the same voice-over at about a tenth of the file size
+      const mp3 = await compressAudio(entry.audio);
+      const url = URL.createObjectURL(new Blob([buildPlayerHtml(entry.data, mp3)], { type: 'text/html' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `slide-${slideNumber}-visuals.html`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e: any) {
+      setError(e?.message || 'Could not build the .html file.');
+    } finally {
+      setDownloading(false);
+    }
   };
 
   return (
@@ -316,9 +328,9 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
                 {af ? 'Die stem hier is nie die gekose verteller nie.' : 'The voice in this preview is not the currently selected narrator.'}
               </div>
             )}
-            <button onClick={download} disabled={!entry || busy}
+            <button onClick={download} disabled={!entry || busy || downloading}
               className="w-full py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-              <Download size={13} /> {af ? 'Laai .html af' : 'Download standalone .html'}
+              {downloading ? <Loader className="animate-spin" size={13} /> : <Download size={13} />} {af ? 'Laai .html af' : 'Download standalone .html'}
             </button>
             <button onClick={saveToLibrary} disabled={!entry || busy || !!saving}
               className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">

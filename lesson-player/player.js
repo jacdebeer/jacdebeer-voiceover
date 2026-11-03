@@ -1,12 +1,12 @@
 var DATA = JSON.parse(document.getElementById('lessonData').textContent);
 
 var DEF = {
-  en:{date:'Date',doc:'Doc no',details:'Details',fol:'Fol',debit:'Debit',credit:'Credit',balance:'Balance',
+  en:{qty:'Qty',to:'To',date:'Date',doc:'Doc no',details:'Details',fol:'Fol',debit:'Debit',credit:'Credit',balance:'Balance',
       total:'Total',totals:'Totals',balCd:'Balance c/d',balBd:'Balance b/d',play:'Play',pause:'Pause',
       showAll:'Show all',step:'Step',of:'of',correct:'Correct',wrong:'Not quite',continue:'Continue',
       assets:'Assets',oe:'Owner\u2019s equity',liab:'Liabilities',accDr:'Account debited',accCr:'Account credited',
       balanced:'Debits = Credits',unbalanced:'Debits do not equal credits',excerpt:'Extract only \u2014 totals are not expected to balance',footer:'Generated with Accounting Explainer Studio'},
-  af:{date:'Datum',doc:'Dok. nr.',details:'Besonderhede',fol:'Fol',debit:'Debiet',credit:'Krediet',balance:'Saldo',
+  af:{qty:'Hoev.',to:'Aan',date:'Datum',doc:'Dok. nr.',details:'Besonderhede',fol:'Fol',debit:'Debiet',credit:'Krediet',balance:'Saldo',
       total:'Totaal',totals:'Totale',balCd:'Saldo a/a',balBd:'Saldo b/o',play:'Speel',pause:'Wag',
       showAll:'Wys alles',step:'Stap',of:'van',correct:'Korrek',wrong:'Nie heeltemal nie',continue:'Gaan voort',
       assets:'Bates',oe:'Eienaarsbelang',liab:'Laste',accDr:'Rekening gedebiteer',accCr:'Rekening gekrediteer',
@@ -38,15 +38,16 @@ function sum(rows, fn){ var t = 0; for(var i=0;i<rows.length;i++) t += num(fn(ro
 function rSourceDoc(b){
   var d = b.doc || {};
   var box = el('div','doc');
+  box.setAttribute('data-reveal','');
   var lines = d.lines || [];
   var showQty = lines.some(function(l){ return l.qty !== undefined && l.qty !== null; });
   var h = '<div class="dh"><div><div class="dt">' + esc(d.docType||'') + '</div>' +
           (d.from ? '<div style="font-size:.8rem">' + esc(d.from) + '</div>' : '') + '</div>' +
           '<div class="dn">' + esc(L.doc) + '<b>' + esc(d.docNo||'') + '</b>' + esc(d.date||'') + '</div></div>';
-  if(d.to) h += '<div class="party"><b>' + esc(d.toLabel || 'To') + ':</b> ' + esc(d.to) + '</div>';
+  if(d.to) h += '<div class="party"><b>' + esc(d.toLabel || L.to) + ':</b> ' + esc(d.to) + '</div>';
   if(lines.length){
     h += '<table><thead><tr><th style="text-align:left">' + esc(L.details) + '</th>' +
-         (showQty ? '<th class="num">Qty</th><th class="num">' + esc(CUR) + '</th>' : '') +
+         (showQty ? '<th class="num">' + esc(L.qty) + '</th><th class="num">' + esc(CUR) + '</th>' : '') +
          '<th class="num">' + esc(CUR) + '</th></tr></thead><tbody>';
     lines.forEach(function(l){
       h += '<tr><td>' + esc(l.desc) + '</td>' +
@@ -434,23 +435,39 @@ function say(text, done){
     .catch(function(){ if(token === sayToken){ banner('cloud', voiceErr); finish(); } });
 }
 
-/* what to say for the line that is about to be revealed */
-function lineFor(i){
-  var b = beats[bi] || {};
-  var n = b.narration || [];
-  return n[i] || null;
+/* what to say for the element that is about to be revealed: its own narration entry; the last element also says any
+   entries beyond the number of elements, so no sentence of the script is ever skipped */
+function linesFor(i){
+  var n = (beats[bi] || {}).narration || [];
+  var out = [];
+  if(n[i]) out.push(n[i]);
+  if(i === steps.length - 1) for(var k = steps.length; k < n.length; k++) if(n[k]) out.push(n[k]);
+  return out;
+}
+function sayAll(lines, done){
+  if(!lines.length){ done(); return; }
+  say(lines[0], function(){ sayAll(lines.slice(1), done); });   /* hush() cancels pending callbacks, so no guard is needed here */
+}
+/* the caption, then (for a beat with nothing to reveal) its narration, then cb */
+function sayBeatIntro(b, cb){
+  var lines = [];
+  if(b.caption) lines.push(b.caption);
+  if(!steps.length) (b.narration || []).forEach(function(x){ if(x) lines.push(x); });
+  if(!lines.length){ cb(); return false; }
+  sayAll(lines, cb);
+  return true;
 }
 
 function tick(){
   if(!playing) return;
-  var line = lineFor(si);
+  var lines = linesFor(si);
   var atEnd = (si >= steps.length);
   if(!stepFwd()){ play(false); return; }
   if(atEnd){                       /* we moved to a new beat: read its caption first */
     var b = beats[bi] || {};
-    if(voiceOn && b.caption){ say(b.caption, function(){ if(playing) tick(); }); return; }
-  } else if(voiceOn && line){
-    say(line, function(){ if(playing) setTimeout(tick, 350); });
+    if(voiceOn && sayBeatIntro(b, function(){ if(playing) tick(); })) return;
+  } else if(voiceOn && lines.length){
+    sayAll(lines, function(){ if(playing) setTimeout(tick, 350); });
     return;
   }
   timer = setTimeout(tick, voiceOn ? 1200 : STEP_MS);
@@ -462,9 +479,9 @@ function play(on){
   clearTimeout(timer);
   if(!on){ hush(); return; }
   var b = beats[bi] || {};
-  if(voiceOn && si === 0 && b.caption && !spoke[bi]){
+  if(voiceOn && si === 0 && (b.caption || (!steps.length && (b.narration||[]).length)) && !spoke[bi]){
     spoke[bi] = 1;
-    say(b.caption, function(){ if(playing) tick(); });
+    if(!sayBeatIntro(b, function(){ if(playing) tick(); })) tick();
   } else {
     tick();
   }
@@ -510,7 +527,7 @@ var sc = DATA.scenario || {};
 document.getElementById('pMeta').textContent = [sc.entity, sc.period, sc.vat].filter(Boolean).join(' \u00B7 ');
 document.getElementById('pFoot').textContent = L.footer;
 document.getElementById('bPrev').onclick = function(){ play(false); hush(); stepBack(); };
-document.getElementById('bNext').onclick = function(){ var l = lineFor(si); play(false); hush(); if(stepFwd() && voiceOn) say(l || (beats[bi]||{}).caption || ''); };
+document.getElementById('bNext').onclick = function(){ var ls = linesFor(si); play(false); hush(); if(stepFwd() && voiceOn){ if(ls.length) sayAll(ls, function(){}); else say((beats[bi]||{}).caption || ''); } };
 document.getElementById('bPlay').onclick = function(){ play(!playing); };
 document.getElementById('bAll').textContent = L.showAll;
 document.getElementById('bAll').onclick = function(){ showAll = !showAll; si = showAll ? steps.length : 0; paint(); };

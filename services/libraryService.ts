@@ -115,6 +115,18 @@ export async function loadLesson(id: string): Promise<{ summary: LessonSummary; 
   return { summary: doc as LessonSummary, data, audio };
 }
 
+/** The same clips as MP3 data URIs (about a tenth of the size of WAV). Clips that are already MP3 are kept as they are. */
+export async function compressAudio(audio: Record<string, string>, onProgress?: (done: number, total: number) => void): Promise<Record<string, string>> {
+  const entries = Object.entries(audio);
+  const out: Record<string, string> = {};
+  let done = 0;
+  for (const [line, uri] of entries) {
+    out[line] = uri.startsWith('data:audio/wav') ? 'data:audio/mpeg;base64,' + bytesToBase64(await pcmToMp3(wavUriToPcm(uri))) : uri;
+    onProgress?.(++done, entries.length);
+  }
+  return out;
+}
+
 export function standaloneHtml(data: LessonData, audio: Record<string, string>): string {
   return buildPlayerHtml(data, audio);
 }

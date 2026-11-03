@@ -22,6 +22,7 @@ body{font-family:var(--font);background:#EEF1F6;color:var(--ink);line-height:1.5
 .stage h2 .num{color:var(--accent);margin-right:8px}
 .stageNote{font-size:.8rem;color:var(--ink2);margin-bottom:16px}
 .block{margin:18px 0}
+@media(max-width:760px){.block{overflow-x:auto;-webkit-overflow-scrolling:touch}}
 .block:first-of-type{margin-top:6px}
 .blockTitle{font-size:.82rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--ink2);margin-bottom:7px}
 table{border-collapse:collapse;width:100%;background:#fff;font-size:.8rem;table-layout:auto}
