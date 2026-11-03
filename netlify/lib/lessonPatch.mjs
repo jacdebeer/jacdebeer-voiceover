@@ -6,6 +6,8 @@ const ROOTS = new Set(['icon', 'title', 'subtitle', 'currency', 'labels', 'scena
 const BLOCK_TYPES = new Set(['source_document', 'calculation', 'journal', 't_accounts', 'ledger_columnar', 'equation', 'trial_balance', 'text', 'flow', 'formula', 'cards', 'change']);
 const MAX_OPS = 60;
 const MAX_BEATS = 12;
+// a lesson made of several slides has the beats of all of them
+const MAX_BEATS_COMBINED = 80;
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
@@ -80,7 +82,8 @@ export function validateLesson(l) {
   const bad = [];
   if (!isObj(l)) return ['the lesson is not an object'];
   if (!Array.isArray(l.beats) || !l.beats.length) return ['there are no beats'];
-  if (l.beats.length > MAX_BEATS) bad.push(`more than ${MAX_BEATS} beats`);
+  const maxBeats = l.mode === 'combined' ? MAX_BEATS_COMBINED : MAX_BEATS;
+  if (l.beats.length > maxBeats) bad.push(`more than ${maxBeats} beats`);
   if (l.pronunciations !== undefined) {
     if (!isObj(l.pronunciations) || Object.keys(l.pronunciations).length > 50) bad.push('pronunciations must be an object of at most 50 words');
     else for (const [k, v] of Object.entries(l.pronunciations)) if (typeof v !== 'string' || !k.trim() || k.length > 40 || v.length > 60) bad.push(`pronunciation "${k}" is not valid`);

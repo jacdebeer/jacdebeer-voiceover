@@ -2,6 +2,16 @@ import playerCss from '../lesson-player/player.css?raw';
 import playerBody from '../lesson-player/player-body.html?raw';
 import playerJs from '../lesson-player/player.js?raw';
 import { brandFontCss, brandPlayerCss, brandBarHtml, brandFootHtml } from '../brand/brand';
+// @ts-ignore - plain JS module shared with the server
+import { stripIllustrationNotes, tidyApostrophes } from '../netlify/lib/lessonRepair.mjs';
+
+/** A copy of the lesson as it is shown: without the "figures are only an example" notes, apostrophes tidied. The lesson itself is untouched. */
+export function forDisplay(data: LessonData): LessonData {
+  const copy: LessonData = JSON.parse(JSON.stringify(data));
+  stripIllustrationNotes(copy);
+  tidyApostrophes(copy);
+  return copy;
+}
 
 /** Lesson data produced by the model (see netlify/lib/lessonPrompt.mjs for the schema). */
 export interface LessonData {
@@ -58,7 +68,7 @@ export function checkScript(data: LessonData, slideText: string): { ok: boolean;
  */
 export function buildPlayerHtml(data: LessonData, audio: Record<string, string>): string {
   const safe = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
-  const lesson = { ...data, embeddedAudioOnly: true };
+  const lesson = { ...forDisplay(data), embeddedAudioOnly: true };
   const title = String(data.title || 'Explainer').replace(/[<>&"]/g, '');
   const brand = data.brand !== false;
   return (

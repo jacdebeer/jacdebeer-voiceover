@@ -157,3 +157,52 @@ export function addDefaultIcons(data) {
   }
   return added;
 }
+
+// Notes that tell the viewer the figures are only an illustration ("Illustrasie: Die syfers is slegs 'n voorbeeld ...") are not
+// wanted anywhere in the content. The model is told not to write them; this removes the ones that still come, and the ones in
+// lessons that were made before.
+const NOTE_HEADING = /^\s*(?:illustrasie|illustratiewe|illustration|illustrative|voorbeeld(?:e|figure|syfers)?|example(?: figures)?)\b/i;
+const NOTE_SENTENCE = /(?:syfers|bedrae|figure|figures|amounts|numbers|dokumentnommer|document number|vennootskap?nommer)[^.!?]*(?:voorbeeld|example|illustra\w*|uitgedink|invented|made[- ]up|fictional|fiktief|gekies|chosen)|(?:slegs|net|only|just|merely)\s+(?:\S+\s+){0,2}(?:voorbeeld|example|illustrasie)|(?:voorbeeld|example)\s+(?:om|to|van die (?:syfers|bedrae))/i;
+
+/** Removes the "figures are only an example" notes. Returns how many blocks were removed or trimmed. */
+export function stripIllustrationNotes(data) {
+  let changed = 0;
+  if (!data || !Array.isArray(data.beats)) return 0;
+  // the header line ("Maatskappy \u00B7 Illustrasie \u00B7 Geen BTW") and the subtitle can carry the same word
+  for (const holder of [data, data.scenario]) {
+    if (!holder || typeof holder !== 'object') continue;
+    for (const k of ['subtitle', 'period', 'entity', 'vat']) {
+      if (typeof holder[k] === 'string' && /^\s*(?:illustrasie|illustratiewe|illustration|illustrative)\b/i.test(holder[k])) { delete holder[k]; changed++; }
+    }
+  }
+  for (const beat of data.beats) {
+    if (!Array.isArray(beat.blocks)) continue;
+    const kept = [];
+    for (const blk of beat.blocks) {
+      if (!blk || blk.type !== 'text') { kept.push(blk); continue; }
+      const headingNote = NOTE_HEADING.test(String(blk.heading || ''));
+      const sentences = String(blk.body || '').split(/(?<=[.!?\u2026])\s+/).filter(Boolean);
+      const isNote = (sn) => NOTE_SENTENCE.test(sn);
+      if (!headingNote && !(blk.tone === 'warn' && sentences.some(isNote)) && !(sentences.length > 0 && sentences.every(isNote))) { kept.push(blk); continue; }
+      changed++;
+      const rest = sentences.filter((sn) => !isNote(sn));
+      // what is left after the note is real content: keep it as a plain note without the warning
+      if (rest.length) kept.push({ type: 'text', tone: 'info', icon: '\uD83D\uDCA1', body: rest.join(' ') });
+    }
+    beat.blocks = kept;
+  }
+  return changed;
+}
+
+/** A straight apostrophe in the Afrikaans article ('n) becomes the typographic one (\u2019n) used everywhere else, on screen only. */
+export function tidyApostrophes(data) {
+  let n = 0;
+  const fix = (t) => (typeof t === 'string' ? t.replace(/(^|[\s(\u201C"])'n\b/g, (m, pre) => { n++; return pre + '\u2019n'; }) : t);
+  const walk = (o) => {
+    if (Array.isArray(o)) { o.forEach((v, i) => { if (typeof v === 'string') o[i] = fix(v); else walk(v); }); return; }
+    // the spoken lines (caption, narration) are left alone: the audio is found by their exact text
+    if (o && typeof o === 'object') for (const k of Object.keys(o)) { if (k === 'caption' || k === 'narration') continue; if (typeof o[k] === 'string') o[k] = fix(o[k]); else walk(o[k]); }
+  };
+  walk(data);
+  return n;
+}

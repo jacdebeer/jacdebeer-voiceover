@@ -85,8 +85,13 @@ const EDIT_RULES = [
   'Keep the lesson in its language. Do not translate it unless asked. Never invent facts the user did not give; for figures that are not specified, keep the existing ones.',
 ].join('\n');
 
-export function buildChatSystem(lang: 'en' | 'af'): string {
-  return SYSTEM + '\n' + EDIT_RULES + (lang === 'af' ? '\n\n' + afrikaansGlossaryPrompt() : '');
+const COMBINED_RULES = [
+  '',
+  'COMBINED LESSON. This lesson is made of several slides, one after the other. Every beat has a "group" that names its slide. Keep the "group" of every existing beat exactly as it is, do not move a beat to another slide, and give a new beat the same "group" as the beat before it. A slide must keep at least one beat. Times in the timeline run through the whole lesson.',
+].join('\n');
+
+export function buildChatSystem(lang: 'en' | 'af', combined = false): string {
+  return SYSTEM + '\n' + EDIT_RULES + (combined ? COMBINED_RULES : '') + (lang === 'af' ? '\n\n' + afrikaansGlossaryPrompt() : '');
 }
 
 /** The conversation as Anthropic messages: roles alternate, start with the user, and the last turn carries the lesson. */
@@ -135,7 +140,7 @@ async function callModel(apiKey: string, system: string, messages: any[], fetchI
 
 /** Asks Claude, checks any proposal against the lesson rules, and gives the model one chance to repair a bad proposal. */
 export async function runChat(input: ChatInput, apiKey: string, fetchImpl: typeof fetch = fetch): Promise<ChatResult> {
-  const system = buildChatSystem(input.lang);
+  const system = buildChatSystem(input.lang, input.lesson?.mode === 'combined');
   const messages: any[] = buildChatMessages(input);
   let lastError = '';
   for (let attempt = 0; attempt < 2; attempt++) {

@@ -1,4 +1,4 @@
-import { LessonData } from './lessonPlayer';
+import { LessonData, forDisplay } from './lessonPlayer';
 
 /**
  * One lesson from several slides: the beats of every slide, in slide order, each tagged with its slide label so the player's
@@ -8,12 +8,13 @@ export function mergeLessons(
   items: { label: string; data: LessonData }[],
   opts: { title: string; subtitle?: string; brand?: boolean },
 ): LessonData {
-  const first = items[0]?.data ?? {};
+  const first = items[0] ? forDisplay(items[0].data) : {};
   const pronunciations: Record<string, string> = {};
   const beats: NonNullable<LessonData['beats']> = [];
   for (const it of items) {
-    Object.assign(pronunciations, (it.data.pronunciations as Record<string, string> | undefined) ?? {});
-    for (const b of it.data.beats ?? []) beats.push({ ...b, group: it.label });
+    const d = forDisplay(it.data); // without the "figures are only an example" notes
+    Object.assign(pronunciations, (d.pronunciations as Record<string, string> | undefined) ?? {});
+    for (const b of d.beats ?? []) beats.push({ ...b, group: it.label });
   }
   const merged: LessonData = {
     lang: first.lang,
