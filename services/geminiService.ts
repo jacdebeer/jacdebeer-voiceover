@@ -29,7 +29,8 @@ export async function generateSpeech(
   isAfrikaans: boolean = false,
   libraryVoice: boolean = false,
   provider: 'gemini' | 'elevenlabs' = 'gemini',
-  attempt: number = 0
+  attempt: number = 0,
+  pronunciations?: Record<string, string>
 ): Promise<string> {
   if (!text || !text.trim()) {
     throw new Error("Text cannot be empty");
@@ -46,6 +47,7 @@ export async function generateSpeech(
       libraryVoice,
       provider,
       attempt,
+      ...(pronunciations && Object.keys(pronunciations).length ? { pronunciations } : {}),
     }),
   });
 
@@ -74,7 +76,7 @@ export async function generateSpeech(
  * Generates speech for a VoiceOption, picking the right engine (Gemini or ElevenLabs).
  * The language follows the app-wide toggle, not the voice.
  */
-export function generateSpeechForVoice(voice: VoiceOption, text: string, isAfrikaans: boolean, attempt: number = 0): Promise<string> {
+export function generateSpeechForVoice(voice: VoiceOption, text: string, isAfrikaans: boolean, attempt: number = 0, pronunciations?: Record<string, string>): Promise<string> {
   return generateSpeech(
     text,
     voice.voiceName,
@@ -82,7 +84,8 @@ export function generateSpeechForVoice(voice: VoiceOption, text: string, isAfrik
     isAfrikaans,
     voice.isLibrary === true,
     voice.provider === 'elevenlabs' ? 'elevenlabs' : 'gemini',
-    attempt
+    attempt,
+    pronunciations
   );
 }
 
@@ -127,16 +130,16 @@ export async function generateCheckedSpeech(
   voice: VoiceOption,
   text: string,
   isAfrikaans: boolean,
-  options: { skipCheck?: boolean } = {}
+  options: { skipCheck?: boolean; pronunciations?: Record<string, string> } = {}
 ): Promise<{ base64: string; check: VoiceCheck }> {
-  let base64 = await generateSpeechForVoice(voice, text, isAfrikaans, 0);
+  let base64 = await generateSpeechForVoice(voice, text, isAfrikaans, 0, options.pronunciations);
   if (!isAfrikaans) return { base64, check: { checked: false, heardDutch: false, attempts: 1, reason: 'not Afrikaans' } };
   if (options.skipCheck) return { base64, check: { checked: false, heardDutch: false, attempts: 1, reason: 'not checked' } };
   const maxRetries = voice.provider === 'elevenlabs' ? 0 : 1;
   let attempts = 1;
   let check = await checkVoiceLanguage(base64, text);
   while (check.checked && check.heardDutch && attempts <= maxRetries) {
-    base64 = await generateSpeechForVoice(voice, text, isAfrikaans, attempts);
+    base64 = await generateSpeechForVoice(voice, text, isAfrikaans, attempts, options.pronunciations);
     attempts++;
     check = await checkVoiceLanguage(base64, text);
   }
