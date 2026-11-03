@@ -18,6 +18,7 @@ const SLIDE_TEXT_RULE = [
   '   The user message contains the exact voice-over script of ONE slide. Build the visuals that illustrate it.',
   '   - Do not translate, reword, shorten, extend or reorder the script.',
   '   - "caption" and every "narration" entry must be sentences copied character-for-character from the script. Reading each beat\'s caption and then its narration entries, beat by beat, must reproduce the whole script in its original order, with nothing added and nothing left out.',
+  '   - NEVER SAY A SENTENCE TWICE. Each sentence of the script appears exactly once in the whole lesson: in a beat\'s "caption" OR in one of its "narration" entries, never in both, never in two beats. If a beat has a single script sentence, make it the caption and leave every narration entry as "". Do not split a sentence into pieces and also keep it whole.',
   '   - Keep one "narration" entry per revealed line of the beat. Where no script sentence belongs to a revealed line, use an empty string "".',
   '   - Use as many beats as the script needs (1 to 7). Do not add a beat that has no script sentence behind it.',
   '   - Use ONLY the figures, names, dates and document numbers given in the script (rule E0). Put numbers in the blocks exactly as the script states them.',

@@ -93,22 +93,26 @@ export interface VoiceCheck {
   language?: string;
   probability?: number | null;
   dutchWords?: string[];
+  /** Scribe called it Dutch, even if the transcript matched the Afrikaans script well enough to accept it */
+  labelDutch?: boolean;
+  /** 0..1: how much of the script's wording came back in the transcript */
+  matchPct?: number | null;
   attempts: number;
   reason?: string;
 }
 
 /** Asks the server which language the take sounds like (ElevenLabs Scribe). Never throws: an unavailable check just says so. */
-export async function checkVoiceLanguage(base64Pcm24k: string): Promise<Omit<VoiceCheck, 'attempts'>> {
+export async function checkVoiceLanguage(base64Pcm24k: string, expectedText: string): Promise<Omit<VoiceCheck, 'attempts'>> {
   try {
     const pcm16 = downsampleTo16k(decodeBase64(base64Pcm24k)).slice(0, 16000 * 2 * 90); // first 90 seconds is plenty
     const res = await fetch('/api/voice-check', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pcm16kBase64: bytesToBase64(pcm16) }),
+      body: JSON.stringify({ pcm16kBase64: bytesToBase64(pcm16), expectedText: expectedText.slice(0, 20000) }),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.checked) return { checked: false, heardDutch: false, reason: d.reason || `check returned ${res.status}` };
-    return { checked: true, heardDutch: d.heardDutch === true, language: d.language, probability: d.probability, dutchWords: d.dutchWords };
+    return { checked: true, heardDutch: d.heardDutch === true, language: d.language, probability: d.probability, dutchWords: d.dutchWords, labelDutch: d.labelDutch === true, matchPct: typeof d.matchPct === 'number' ? d.matchPct : null };
   } catch {
     return { checked: false, heardDutch: false, reason: 'check unavailable' };
   }
@@ -128,11 +132,11 @@ export async function generateCheckedSpeech(
   let base64 = await generateSpeechForVoice(voice, text, isAfrikaans, 0);
   if (!isAfrikaans) return { base64, check: { checked: false, heardDutch: false, attempts: 1, reason: 'not Afrikaans' } };
   let attempts = 1;
-  let check = await checkVoiceLanguage(base64);
+  let check = await checkVoiceLanguage(base64, text);
   while (check.checked && check.heardDutch && attempts <= MAX_DUTCH_RETRIES) {
     base64 = await generateSpeechForVoice(voice, text, isAfrikaans, attempts);
     attempts++;
-    check = await checkVoiceLanguage(base64);
+    check = await checkVoiceLanguage(base64, text);
   }
   return { base64, check: { ...check, attempts } };
 }

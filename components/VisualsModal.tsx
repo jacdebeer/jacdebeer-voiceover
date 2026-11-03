@@ -212,9 +212,14 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
                 <div>
                   {!entry.report.check || !entry.report.check.checked
                     ? (af ? 'Taalkontrole: nie beskikbaar nie' : `Language check: not available${entry.report.check?.reason ? ` (${entry.report.check.reason})` : ''}`)
-                    : entry.report.check.heardDutch
-                      ? (af ? 'Taalkontrole: klink steeds Nederlands. Probeer \'n ander stem.' : `Language check: still sounds Dutch after ${entry.report.check.attempts} tries. Try another voice.`)
-                      : (af ? `Taalkontrole: Afrikaans${entry.report.check.attempts > 1 ? ` (na ${entry.report.check.attempts} pogings)` : ''}` : `Language check: ${entry.report.check.language || 'Afrikaans'}${entry.report.check.probability ? ` ${Math.round(entry.report.check.probability * 100)}%` : ''}${entry.report.check.attempts > 1 ? `, after ${entry.report.check.attempts} tries` : ''}`)}
+                    : (() => {
+                        const c = entry.report.check!;
+                        const pct = (x?: number | null) => (typeof x === 'number' ? `${Math.round(x * 100)}%` : '?');
+                        const facts = `${c.language || '?'} ${pct(c.probability)}, ${af ? 'ooreenstemming met teks' : 'match with the script'} ${pct(c.matchPct)}${c.attempts > 1 ? `, ${c.attempts} ${af ? 'pogings' : 'tries'}` : ''}`;
+                        if (c.heardDutch) return af ? `Taalkontrole: klink Nederlands (${facts}). Probeer 'n ander stem.` : `Language check: sounds Dutch (${facts}). Try another voice.`;
+                        if (c.labelDutch) return af ? `Taalkontrole: aanvaar. Die tekens sê Nederlands, maar die teks stem ooreen (${facts}).` : `Language check: accepted. Scribe labelled it Dutch but the transcript matches the Afrikaans script (${facts}).`;
+                        return af ? `Taalkontrole: Afrikaans (${facts})` : `Language check: Afrikaans (${facts})`;
+                      })()}
                 </div>
                 {entry.report.note && <div className="opacity-80">{entry.report.note}</div>}
               </div>
