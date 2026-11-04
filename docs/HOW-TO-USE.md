@@ -1,6 +1,6 @@
 # How to use CourseVoice Studio (Get Sharp Academy)
 
-The app turns slide text into a voiced lesson with animated accounting visuals, as one standalone html file. Labels are given in English with the Afrikaans label in brackets.
+The app turns slide text into a voiced lesson with animated accounting visuals, as one standalone html file. Labels are given in English with the Afrikaans label in brackets. This manual is also in the app: press **Help** (*Hulp*) in the top bar.
 
 ## 1. The workflow in five steps
 
@@ -20,9 +20,8 @@ The app turns slide text into a voiced lesson with animated accounting visuals, 
 - **Save slide audio.** Under the audio player, *Save audio to library* keeps the voice-over of the open slide. When several slides have audio, *Save all ... audio clips as a collection* keeps them together.
 - **Each slide on its own.** In *All slides in one html*, *Save slides as a collection* saves every slide as its own lesson inside one collection. *Download the slides as a .zip* gives one html file per slide. (*Save to library* there still saves the one combined lesson.)
 - **Open it again to change it.** In *Biblioteek*, the pencil on a lesson or a collection's *Edit* loads it back into the studio, with its visuals and voice. It replaces the project that is open (you can undo), so save what you are doing first. A saved voice-over is added as a new slide instead. Change the text or use the chat, make only what needs making, then press *Update ...*: the saved version is replaced and keeps its share and embed link. *Save as a new collection / copy* keeps the old one as it was.
-- **Limits.** A combined all-in-one lesson cannot be opened for editing (save the slides as a collection to be able to). A lesson saved before collections existed opens with its spoken words as the slide text, and will voice again if you change the narrator.
-
-The page opens on a Get Sharp Academy intro, with a thank-you screen at the end. The branding checkbox turns the branding and the intro and outro off.
+- **Other things the library does.** Play an item, rename it, download it (*.html* for a lesson, *.mp3* for audio), delete it, or tick the public embed link to share it. A collection opens like a folder; its zip button downloads every slide, and deleting a collection deletes the slides in it.
+- **Limits.** A combined all-in-one lesson has no Edit button: it cannot be opened for editing (save the slides as a collection to be able to). A lesson saved before collections existed opens with its spoken words as the slide text, and will voice again if you change the narrator.
 
 ## 2. Changing a finished lesson: the chat with Claude
 
@@ -50,6 +49,8 @@ Record with the microphone or choose an audio file, then *Transcribe*. The text 
 - **A slide shows "Not made as one take"**: its sentences were voiced one by one, without the language check, so the accent can differ between lines. Press the button on that card to voice it again.
 - **"ElevenLabs credits ..." message**: the credit limit of the key, or of the account, is used up. Raise the key's limit or top up in ElevenLabs, or choose a Gemini voice. Slides already finished are kept.
 - **A slide is too long to produce**: use *Balance slides*.
+- **A save to the library stops halfway** (connection lost, session ended): nothing half-saved is left in the library. Sign in again if asked, then save again. When updating a collection, slides already replaced stay replaced.
+- **No Edit button on a library item**: it is a combined all-in-one lesson (see section 1b).
 - **A voice sounds Dutch or a word is said wrongly**: voice the slide again, and fix a word once with a pronunciation rule in the chat ("say Bates as Baates from now on").
 
 ---
@@ -69,6 +70,6 @@ What costs money: the **voice** (ElevenLabs credits or the Gemini quota, by the 
 9. **Test with one short slide.** Before voicing a whole course, run one slide to check the narrator, the accent and the visuals.
 10. **Turn a repeated correction into a rule.** A pronunciation or convention rule saved once (*this file and all future lessons*) saves repeating the same chat request, and the same re-voicing, in every lesson.
 11. **Use *Stop* when a run goes wrong.** It stops the next slides from being produced; finished slides are kept.
-12. **Save to the library once, at the end, and update instead of saving copies.** The library keeps small MP3 files, so reopening and sharing cost nothing extra, and you can download the html again any time.
+12. **Save to the library once, at the end, and update instead of saving copies.** The library keeps small MP3 files, so reopening and sharing cost nothing extra, and you can download the html again any time. Opening saved work for editing costs nothing by itself; slides you did not change are not made or voiced again, and *Update* replaces the saved version instead of adding another copy.
 
 For whoever runs the deployment: the visuals and chat use `claude-sonnet-5-5` by default; setting `VISUALS_MODEL` to a smaller model reduces the Claude cost at the price of simpler visuals. The ElevenLabs key can be given a credit limit in ElevenLabs so a long run cannot use more than intended.
