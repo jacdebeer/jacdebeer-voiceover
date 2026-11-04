@@ -30,6 +30,9 @@ interface Props {
   entry: VisualsEntry | undefined;
   onEntry: (entry: VisualsEntry | undefined) => void;
   onClose: () => void;
+  /** the saved lesson this slide was opened from (if any), so saving again can update it */
+  link?: { id: string; token: string; title: string } | null;
+  onLink?: (link: { id: string; token: string; title: string } | null) => void;
 }
 
 const LEVELS: { id: VisualsLevel; label: string }[] = [
@@ -41,7 +44,7 @@ const LEVELS: { id: VisualsLevel; label: string }[] = [
   { id: 'univ', label: 'University' },
 ];
 
-export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language, voice, entry, onEntry, onClose }) => {
+export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language, voice, entry, onEntry, onClose, link, onLink }) => {
   const [level, setLevel] = useState<VisualsLevel>('univ');
   const [currency, setCurrency] = useState('R');
   // A short outline (just headings) cannot make a voice-over by itself, so it starts in Explain. A finished script starts in Read.
@@ -146,18 +149,24 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
   const [saving, setSaving] = useState<{ done: number; total: number; phase: string } | null>(null);
   const [savedAs, setSavedAs] = useState<{ title: string; token: string } | null>(null);
   useEffect(() => setSavedAs(null), [entry]);
-  const saveToLibrary = async () => {
+  const saveToLibrary = async (asCopy = false) => {
     if (!entry) return;
+    const update = !!link && !asCopy;
     const suggested = `${af ? 'Skyfie' : 'Slide'} ${slideNumber}: ${String(entry.data.title || '').trim() || (af ? 'Les' : 'Lesson')}`;
-    const title = window.prompt(af ? 'Naam vir hierdie les in die biblioteek:' : 'Name for this lesson in the library:', suggested);
+    const title = update ? link!.title : window.prompt(af ? 'Naam vir hierdie les in die biblioteek:' : 'Name for this lesson in the library:', suggested);
     if (!title || !title.trim()) return;
     setError(null);
     setSaving({ done: 0, total: 0, phase: 'create' });
     try {
       const r = await saveLesson(
-        { title: title.trim(), slideLabel: `${af ? 'Skyfie' : 'Slide'} ${slideNumber}`, voiceLabel: voice.label, lang: entry.lang, mode: entry.mode, data: branded(entry.data), audio: entry.audio },
+        {
+          title: title.trim(), slideLabel: `${af ? 'Skyfie' : 'Slide'} ${slideNumber}`, voiceLabel: voice.label, lang: entry.lang, mode: entry.mode, data: branded(entry.data), audio: entry.audio,
+          source: { slideText: entry.slideText, mode: entry.mode, voiceId: entry.voiceId, lang: entry.lang },
+          replace: update ? { id: link!.id, token: link!.token } : undefined,
+        },
         (done, total, phase) => setSaving({ done, total, phase }),
       );
+      onLink?.({ id: r.id, token: r.token, title: title.trim() });
       setSavedAs({ title: title.trim(), token: r.token });
     } catch (e: any) {
       setError(e?.message || 'Could not save the lesson.');
@@ -333,13 +342,17 @@ export const VisualsModal: React.FC<Props> = ({ slideNumber, slideText, language
               className="w-full py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
               {downloading ? <Loader className="animate-spin" size={13} /> : <Download size={13} />} {af ? 'Laai .html af' : 'Download standalone .html'}
             </button>
-            <button onClick={saveToLibrary} disabled={!entry || busy || !!saving}
+            <button onClick={() => saveToLibrary(false)} disabled={!entry || busy || !!saving} data-testid="save-library"
               className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
               {saving ? <Loader className="animate-spin" size={13} /> : <Save size={13} />}
               {saving
                 ? (saving.phase === 'audio' ? (af ? `Stoor klank ${saving.done} van ${saving.total}…` : `Saving audio ${saving.done} of ${saving.total}…`) : (af ? 'Stoor…' : 'Saving…'))
-                : (af ? 'Stoor in biblioteek' : 'Save to library')}
+                : link ? (af ? `Dateer "${link.title}" op in biblioteek` : `Update "${link.title}" in the library`) : (af ? 'Stoor in biblioteek' : 'Save to library')}
             </button>
+            {link && (
+              <button onClick={() => saveToLibrary(true)} disabled={!entry || busy || !!saving} data-testid="save-copy"
+                className="w-full py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-40">{af ? 'Stoor as nuwe kopie' : 'Save as a new copy'}</button>
+            )}
             {savedAs && (
               <div className="rounded-xl p-2.5 text-[10px] bg-emerald-50 border border-emerald-100 text-emerald-800 leading-snug">
                 {af ? `Gestoor as "${savedAs.title}". Maak dit oop onder Biblioteek in die kopstuk om dit te deel of in te bed.` : `Saved as "${savedAs.title}". Open it under Library in the header to share or embed it.`}

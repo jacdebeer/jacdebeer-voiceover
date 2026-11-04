@@ -20,6 +20,7 @@ import { BalanceModal } from './components/BalanceModal';
 import { AllSlidesModal } from './components/AllSlidesModal';
 import { RulesModal } from './components/RulesModal';
 import { HelpModal } from './components/HelpModal';
+import { saveAudio as saveAudioToLibrary, createCollection, LibraryLink, LibraryEditPayload } from './services/libraryService';
 import { fetchRules } from './services/rulesService';
 import { slideSize, SLIDE_LIMITS, balanceSlides } from './utils/slideBalance';
 import { BRAND } from './brand/brand';
@@ -188,6 +189,9 @@ const App: React.FC = () => {
   const [showBalance, setShowBalance] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  // saved versions the open project came from (set when work is opened from the library), so saving again updates them
+  const [libraryLink, setLibraryLink] = useState<LibraryLink | null>(null);
+  const [audioSave, setAudioSave] = useState<{ busy: boolean; note: string | null; error: string | null }>({ busy: false, note: null, error: null });
   // the slide strip: a slide being dragged, where it would land, and the open slide menu
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
@@ -203,7 +207,7 @@ const App: React.FC = () => {
   useEffect(() => { void fetchRules(); }, []);
   const [showAllVisuals, setShowAllVisuals] = useState(false);
   // the last whole-lesson change (translate all, balance), so it can be undone
-  const [structUndo, setStructUndo] = useState<{ label: string; pages: CoursePage[]; pageIndex: number; language: Language; visuals: Record<number, VisualsEntry> } | null>(null);
+  const [structUndo, setStructUndo] = useState<{ label: string; pages: CoursePage[]; pageIndex: number; language: Language; visuals: Record<number, VisualsEntry>; link: LibraryLink | null } | null>(null);
   const [translateAllProgress, setTranslateAllProgress] = useState<{ current: number; total: number } | null>(null);
   // Visuals built for each slide, kept until the page is closed.
   const [visualsBySlide, setVisualsBySlide] = useState<Record<number, VisualsEntry>>({});
@@ -570,6 +574,75 @@ const App: React.FC = () => {
     }
   };
 
+  // ---- saving slide audio to the library
+  const slideTitleFor = (i: number) => `${af ? 'Skyfie' : 'Slide'} ${i + 1}: ${(pages[i]?.text.trim().split(/\n/)[0] || '').replace(/^#+\s*/, '').slice(0, 60)}`.trim();
+  const handleSaveAudio = async () => {
+    const page = pages[pageIndex];
+    if (!page?.audioData) return;
+    const title = window.prompt(af ? 'Naam vir hierdie klank in die biblioteek:' : 'Name for this audio in the library:', slideTitleFor(pageIndex));
+    if (!title || !title.trim()) return;
+    setAudioSave({ busy: true, note: null, error: null });
+    try {
+      await saveAudioToLibrary({ title: title.trim(), text: page.text, pcm: page.audioData, lang: isAfrikaansText(page.text, language) ? 'af' : 'en', voiceLabel: getSelectedVoice().label, slideLabel: `${af ? 'Skyfie' : 'Slide'} ${pageIndex + 1}` });
+      setAudioSave({ busy: false, note: af ? `Klank gestoor as "${title.trim()}" onder Biblioteek.` : `Audio saved as "${title.trim()}" in the Library.`, error: null });
+    } catch (e: any) {
+      setAudioSave({ busy: false, note: null, error: e?.message || 'Could not save the audio.' });
+    }
+  };
+  const handleSaveAllAudio = async () => {
+    const withAudio = pages.map((p, i) => ({ p, i })).filter((x) => x.p.audioData);
+    if (!withAudio.length) return;
+    const name = window.prompt(af ? 'Naam vir die kolleksie in die biblioteek:' : 'Name for the collection in the library:', af ? 'Klank van alle skyfies' : 'Audio of all slides');
+    if (!name || !name.trim()) return;
+    setAudioSave({ busy: true, note: null, error: null });
+    let collectionId: string | null = null;
+    try {
+      collectionId = (await createCollection(name.trim(), language)).id;
+      for (const { p, i } of withAudio) {
+        await saveAudioToLibrary({ title: slideTitleFor(i), text: p.text, pcm: p.audioData!, lang: isAfrikaansText(p.text, language) ? 'af' : 'en', voiceLabel: getSelectedVoice().label, slideLabel: `${af ? 'Skyfie' : 'Slide'} ${i + 1}`, collectionId, position: i });
+      }
+      setAudioSave({ busy: false, note: af ? `${withAudio.length} klankgreep(e) gestoor in die kolleksie "${name.trim()}".` : `${withAudio.length} audio clip(s) saved in the collection "${name.trim()}".`, error: null });
+    } catch (e: any) {
+      if (collectionId) await fetch(`/api/library/collections/${collectionId}`, { method: 'DELETE' }).catch(() => {});
+      setAudioSave({ busy: false, note: null, error: e?.message || 'Could not save the audio.' });
+    }
+  };
+
+  // ---- opening saved work from the library in the studio
+  const handleLibraryEdit = (payload: LibraryEditPayload) => {
+    const base = Date.now();
+    if (payload.kind === 'audio') {
+      // a saved voice-over joins the open project as a new slide at the end; nothing is replaced
+      const s = payload.slides[0];
+      const added: CoursePage = { id: base, text: s.text, audioData: s.pcm };
+      const next = [...pages, added];
+      setPages(next);
+      setShowLibrary(false);
+      goToPage(next.length - 1, next);
+      return;
+    }
+    const ok = window.confirm(af
+      ? `Maak "${payload.title}" oop in die ateljee? Dit vervang die projek wat nou oop is. Jy kan dit ontdoen.`
+      : `Open "${payload.title}" in the studio? It replaces the project that is open now. You can undo this.`);
+    if (!ok) return;
+    snapshot(af ? `Biblioteek oopgemaak: ${payload.title}` : `Opened from the library: ${payload.title}`);
+    const voiceId = getSelectedVoice().id;
+    const newPages: CoursePage[] = payload.slides.map((s, i) => ({ id: base + i, text: s.text, audioData: s.pcm }));
+    const entries: Record<number, VisualsEntry> = {};
+    const slides: LibraryLink['slides'] = {};
+    payload.slides.forEach((s, i) => {
+      slides[base + i] = { id: s.lessonId, token: s.token };
+      // a lesson saved before the voice was kept is taken to be voiced with the narrator chosen now
+      if (s.entry) entries[base + i] = { ...s.entry, voiceId: s.entry.voiceId || voiceId };
+    });
+    setPages(newPages);
+    setVisualsBySlide(entries);
+    setLibraryLink({ collectionId: payload.collectionId, title: payload.title, slides });
+    setShowLibrary(false);
+    goToPage(0, newPages);
+    if (payload.slides.some((s) => s.entry)) { if (payload.kind === 'collection') setShowAllVisuals(true); else setShowVisuals(true); }
+  };
+
   const handleDownload = () => {
     if (!currentBlobUrlRef.current) return;
     const a = document.createElement('a');
@@ -675,7 +748,7 @@ const App: React.FC = () => {
   const handlePageChange = (direction: 'next' | 'prev') => goToPage(direction === 'next' ? pageIndex + 1 : pageIndex - 1);
 
   // ---- whole-lesson changes: translate every slide, balance slide lengths. Each can be undone.
-  const snapshot = (label: string) => setStructUndo({ label, pages, pageIndex, language, visuals: visualsBySlide });
+  const snapshot = (label: string) => setStructUndo({ label, pages, pageIndex, language, visuals: visualsBySlide, link: libraryLink });
 
   const handleTranslateAll = async () => {
     const filled = pages.filter((p) => p.text.trim()).length;
@@ -738,6 +811,7 @@ const App: React.FC = () => {
     setLanguage(structUndo.language);
     try { localStorage.setItem('app-language', structUndo.language); } catch { /* storage unavailable */ }
     setVisualsBySlide(structUndo.visuals);
+    setLibraryLink(structUndo.link);
     goToPage(Math.min(structUndo.pageIndex, structUndo.pages.length - 1), structUndo.pages);
     setStructUndo(null);
   };
@@ -1358,6 +1432,21 @@ const App: React.FC = () => {
                     </div>
                     <Controls isPlaying={audioState.isPlaying} onPlayPause={handlePlayPause} onReset={stopAudio} onDownload={handleDownload} disabled={!audioState.hasAudio || audioState.isLoading} />
                   </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2" data-testid="audio-save">
+                    <button onClick={handleSaveAudio} disabled={!pages[pageIndex]?.audioData || audioSave.busy} data-testid="save-audio"
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40 flex items-center gap-1.5"
+                      title={af ? 'Stoor die klank van hierdie skyfie in die biblioteek' : 'Save the audio of this slide in the library'}>
+                      {audioSave.busy ? <Loader className="animate-spin" size={12} /> : <Library size={12} />} {af ? 'Stoor klank in biblioteek' : 'Save audio to library'}
+                    </button>
+                    {pages.filter((p) => p.audioData).length > 1 && (
+                      <button onClick={handleSaveAllAudio} disabled={audioSave.busy} data-testid="save-all-audio"
+                        className="px-3 py-1.5 rounded-lg text-[11px] font-bold border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+                        {af ? `Stoor al ${pages.filter((p) => p.audioData).length} klanke as kolleksie` : `Save all ${pages.filter((p) => p.audioData).length} audio clips as a collection`}
+                      </button>
+                    )}
+                    {audioSave.note && <span className="text-[10px] text-emerald-700" data-testid="audio-saved">{audioSave.note}</span>}
+                    {audioSave.error && <span className="text-[10px] text-rose-600">{audioSave.error}</span>}
+                  </div>
                 </section>
 
                 {/* ③ Visuals: two separate productions */}
@@ -1438,7 +1527,7 @@ const App: React.FC = () => {
       {showHelp && <HelpModal af={language === 'af'} onClose={() => setShowHelp(false)} />}
       {showRules && <RulesModal af={language === 'af'} onClose={() => setShowRules(false)} />}
 
-      {showLibrary && <LibraryModal language={language} onClose={() => setShowLibrary(false)} />}
+      {showLibrary && <LibraryModal language={language} onClose={() => setShowLibrary(false)} onEdit={handleLibraryEdit} />}
 
       {showBalance && <BalanceModal pages={pages} language={language} onApply={applyBalance} onClose={() => setShowBalance(false)} />}
 
@@ -1449,6 +1538,8 @@ const App: React.FC = () => {
           voice={getSelectedVoice()}
           entries={visualsBySlide}
           onEntry={(pageId, entry) => setVisualsBySlide((prev) => ({ ...prev, [pageId]: entry }))}
+          link={libraryLink}
+          onLink={setLibraryLink}
           onBalance={() => { setShowAllVisuals(false); setShowBalance(true); }}
           onClose={() => setShowAllVisuals(false)}
         />
@@ -1469,6 +1560,13 @@ const App: React.FC = () => {
               if (entry) next[id] = entry; else delete next[id];
               return next;
             });
+          }}
+          link={(() => { const id = pages[pageIndex]?.id; const l = id !== undefined && libraryLink ? libraryLink.slides[id] : undefined; return l ? { ...l, title: libraryLink!.collectionId ? `${af ? 'Skyfie' : 'Slide'} ${pageIndex + 1}${visualsBySlide[id!]?.data.title ? `: ${visualsBySlide[id!].data.title}` : ''}` : libraryLink!.title } : null; })()}
+          onLink={(l) => {
+            const id = pages[pageIndex]?.id;
+            if (id === undefined || !l) return;
+            // a slide of an opened collection stays in that collection; otherwise this slide is the saved lesson
+            setLibraryLink((cur) => (cur?.collectionId ? { ...cur, slides: { ...cur.slides, [id]: { id: l.id, token: l.token } } } : { collectionId: null, title: l.title, slides: { [id]: { id: l.id, token: l.token } } }));
           }}
           onClose={() => setShowVisuals(false)}
         />

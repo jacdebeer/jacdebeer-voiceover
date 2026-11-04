@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Layers, Loader, Download, Save, AlertCircle, CheckCircle2, Wand2, Volume2, Scissors, Clock3, Maximize2, Minimize2 } from 'lucide-react';
+import { X, Layers, Loader, Download, Save, AlertCircle, CheckCircle2, Wand2, Volume2, Scissors, Clock3, Maximize2, Minimize2, Folder, FileArchive } from 'lucide-react';
 import { CoursePage, VoiceOption } from '../types';
 import { LessonData, buildPlayerHtml, forDisplay, spokenLines } from '../services/lessonPlayer';
 import { produceSlide, autoMode, narrateLines, VisualsLevel, VisualsMode } from '../services/visualsService';
 import { mergeLessons, mergeAudio } from '../services/lessonMerge';
 import { exampleContext } from '../services/lessonContext';
-import { compressAudio, saveLesson } from '../services/libraryService';
+import { compressAudio, saveLesson, saveSlidesAsCollection, zipOfLessons, LibraryLink } from '../services/libraryService';
+import { downloadBlob, safeName } from '../utils/zip';
 import { isAfrikaansText } from '../utils/language';
 import { slideSize, SLIDE_LIMITS } from '../utils/slideBalance';
 import { VisualsEntry } from './VisualsModal';
@@ -22,6 +23,9 @@ interface Props {
   /** opens the balance window: slides that are too long cannot be produced */
   onBalance: () => void;
   onClose: () => void;
+  /** the saved collection the open project came from (if any), so saving again updates it */
+  link: LibraryLink | null;
+  onLink: (link: LibraryLink | null) => void;
 }
 
 type Status = 'empty' | 'toolong' | 'todo' | 'revoice' | 'ready';
@@ -38,7 +42,7 @@ const sigOf = (o: object) => { let v = sigs.get(o); if (v === undefined) { v = +
 
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
-export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entries, onEntry, onBalance, onClose }) => {
+export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entries, onEntry, onBalance, onClose, link, onLink }) => {
   const af = language === 'af';
   const { ref: winRef, full, toggle: toggleFull } = useFullscreen<HTMLDivElement>();
   const [level, setLevel] = useState<VisualsLevel>('univ');
@@ -286,6 +290,57 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
     }
   };
 
+  // every slide as its own lesson, kept together as a collection in the library
+  const [colSaving, setColSaving] = useState<{ slide: number; total: number } | null>(null);
+  const [colSaved, setColSaved] = useState<string | null>(null);
+  const saveCollection = async (asNew: boolean) => {
+    if (!ready.length) return;
+    const update = !asNew && !!link?.collectionId;
+    let name = update ? link!.title : title.trim() || defaultTitle;
+    if (!update) {
+      const n = window.prompt(af ? 'Naam vir die kolleksie in die biblioteek:' : 'Name for the collection in the library:', name);
+      if (!n || !n.trim()) return;
+      name = n.trim();
+    }
+    setColSaving({ slide: 0, total: ready.length });
+    setColSaved(null);
+    setNotice(null);
+    try {
+      const present = new Set(pages.map((p) => p.id));
+      // saved slides that were deleted in the studio are removed from the collection; slides still there but not ready keep their saved version
+      const removeIds = update ? (Object.entries(link!.slides) as [string, { id: string }][]).filter(([pid]) => !present.has(Number(pid))).map(([, v]) => v.id) : [];
+      const r = await saveSlidesAsCollection(
+        { title: name, lang: lessonLang, voiceLabel: voice.label, brand, collectionId: update ? link!.collectionId : null, removeIds,
+          slides: ready.map((x) => ({ pageId: x.p.id, index: x.i, entry: x.e, replace: update ? link!.slides[x.p.id] : undefined })) },
+        (slide, total) => setColSaving({ slide: Math.min(slide + 1, total), total }),
+      );
+      onLink({ collectionId: r.collectionId, title: name, slides: { ...(update ? link!.slides : {}), ...r.slides } });
+      setColSaved(name);
+    } catch (e: any) {
+      setNotice(e?.message || 'Could not save the collection.');
+    } finally {
+      setColSaving(null);
+    }
+  };
+  const [zipping, setZipping] = useState<{ done: number; total: number } | null>(null);
+  const downloadZip = async () => {
+    if (!ready.length) return;
+    setZipping({ done: 0, total: ready.length });
+    setNotice(null);
+    try {
+      const label = lessonLang === 'af' ? 'Skyfie' : 'Slide';
+      const zip = await zipOfLessons(
+        ready.map((x) => ({ name: `${label} ${x.i + 1} ${String(x.e.data.title || '')}`.trim(), kind: 'lesson' as const, data: { ...x.e.data, brand }, audio: x.e.audio })),
+        (done, total) => setZipping({ done, total }),
+      );
+      downloadBlob(zip, `${safeName(title.trim() || defaultTitle)}.zip`, 'application/zip');
+    } catch (e: any) {
+      setNotice(e?.message || 'Could not build the zip.');
+    } finally {
+      setZipping(null);
+    }
+  };
+
   const chip = (s: Status) => {
     const map: Record<Status, [string, string]> = {
       ready: [af ? 'Gereed' : 'Ready', 'bg-emerald-50 text-emerald-700 border-emerald-100'],
@@ -394,6 +449,27 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
                 {saving ? (af ? `Stoor klank ${saving.done} van ${saving.total}…` : `Saving audio ${saving.done} of ${saving.total}…`) : (af ? 'Stoor in biblioteek' : 'Save to library')}
               </button>
               {saved && <div className="rounded-xl p-2.5 text-[10px] bg-emerald-50 border border-emerald-100 text-emerald-800">{af ? `Gestoor as "${saved}" onder Biblioteek.` : `Saved as "${saved}" in the Library.`}</div>}
+
+              <div className="pt-2 border-t border-slate-100 space-y-2" data-testid="collection-box">
+                <div className="brand-label text-[11px] text-slate-500">{af ? 'Elke skyfie apart' : 'Each slide on its own'}</div>
+                {link?.collectionId && <p className="text-[10px] text-slate-500 leading-snug">{af ? `Oopgemaak uit die kolleksie "${link.title}". Dateer dit op, of stoor as \'n nuwe kolleksie.` : `Opened from the collection "${link.title}". Update it, or save as a new collection.`}</p>}
+                <button onClick={() => saveCollection(false)} disabled={!ready.length || !!colSaving || running}
+                  className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-40 flex items-center justify-center gap-2" data-testid="save-collection">
+                  {colSaving ? <Loader className="animate-spin" size={13} /> : <Folder size={13} />}
+                  {colSaving ? (af ? `Stoor skyfie ${colSaving.slide} van ${colSaving.total}…` : `Saving slide ${colSaving.slide} of ${colSaving.total}…`)
+                    : link?.collectionId ? (af ? 'Dateer kolleksie op' : 'Update the collection') : (af ? 'Stoor skyfies as kolleksie' : 'Save slides as a collection')}
+                </button>
+                {link?.collectionId && (
+                  <button onClick={() => saveCollection(true)} disabled={!ready.length || !!colSaving || running} data-testid="save-collection-new"
+                    className="w-full py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-40">{af ? 'Stoor as nuwe kolleksie' : 'Save as a new collection'}</button>
+                )}
+                <button onClick={downloadZip} disabled={!ready.length || !!zipping || running}
+                  className="w-full py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-40 flex items-center justify-center gap-2" data-testid="download-zip">
+                  {zipping ? <Loader className="animate-spin" size={13} /> : <FileArchive size={13} />}
+                  {zipping ? (af ? `Berei voor ${zipping.done} van ${zipping.total}…` : `Preparing ${zipping.done} of ${zipping.total}…`) : (af ? 'Laai skyfies as .zip af' : 'Download the slides as a .zip')}
+                </button>
+                {colSaved && <div className="rounded-xl p-2.5 text-[10px] bg-emerald-50 border border-emerald-100 text-emerald-800" data-testid="collection-saved">{af ? `Kolleksie "${colSaved}" gestoor onder Biblioteek.` : `Collection "${colSaved}" saved in the Library.`}</div>}
+              </div>
             </div>
           </div>
 
