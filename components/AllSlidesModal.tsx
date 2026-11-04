@@ -8,6 +8,7 @@ import { exampleContext } from '../services/lessonContext';
 import { compressAudio, saveLesson, saveSlidesAsCollection, zipOfLessons, LibraryLink } from '../services/libraryService';
 import { downloadBlob, safeName } from '../utils/zip';
 import { isAfrikaansText } from '../utils/language';
+import { planLength, WORDS_PER_MINUTE, fmtSeconds, MIN_TOTAL_MINUTES, MAX_TOTAL_MINUTES, MIN_SLIDE_SECONDS, MAX_SLIDE_SECONDS } from '../netlify/lib/lengthPlan.mjs';
 import { slideSize, SLIDE_LIMITS } from '../utils/slideBalance';
 import { VisualsEntry } from './VisualsModal';
 import { useFullscreen } from '../utils/useFullscreen';
@@ -48,6 +49,9 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
   const [level, setLevel] = useState<VisualsLevel>('univ');
   const [currency, setCurrency] = useState('R');
   const [modeChoice, setModeChoice] = useState<'auto' | VisualsMode>('auto');
+  // length of the finished presentation (explain mode only)
+  const [totalMinutes, setTotalMinutes] = useState(() => { try { const v = Number(localStorage.getItem('total-minutes')); return v >= MIN_TOTAL_MINUTES && v <= MAX_TOTAL_MINUTES ? v : 10; } catch { return 10; } });
+  useEffect(() => { try { localStorage.setItem('total-minutes', String(totalMinutes)); } catch { /* storage unavailable */ } }, [totalMinutes]);
   const [brand, setBrand] = useState(() => { try { return localStorage.getItem('brand-on') !== '0'; } catch { return true; } });
   // the words inside the finished lesson follow the language of the lesson, not the language of this window
   const [titleText, setTitleText] = useState<string | null>(null);
@@ -62,11 +66,30 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
   const modeFor = (p: CoursePage): VisualsMode => (modeChoice === 'auto' ? autoMode(p.text) : modeChoice);
   const langFor = (p: CoursePage): 'en' | 'af' => (isAfrikaansText(p.text, language) ? 'af' : 'en');
 
+  // How long each explained slide should be so that the whole presentation is about totalMinutes. Only when every slide is explained (the slider is
+  // shown for "Explain every slide"); read slides keep the length of their text and are taken off the total.
+  const lengthOn = modeChoice === 'explain';
+  const lengthPlanned = useMemo(() => {
+    if (!lengthOn) return null;
+    const live = pages.filter((p) => p.text.trim() && slideSize(p.text).level !== 'toolong');
+    if (!live.length) return null;
+    const plan = planLength(totalMinutes * 60, live.map((p) => ({ explain: true, weight: 1 + Math.min(p.text.trim().split(/\s+/).length, 60) / 60 })));
+    const byId: Record<number, number> = {};
+    live.forEach((p, k) => { byId[p.id] = plan.seconds[k]; });
+    return { byId, plan, count: live.length };
+  }, [lengthOn, totalMinutes, pages]);
+  const targetFor = (p: CoursePage): number | undefined => (lengthPlanned ? lengthPlanned.byId[p.id] : undefined);
+  // a slide made for another length is made again (a slide without a recorded length, for example one opened from the library, is left alone)
+  const lengthDiffers = (p: CoursePage, e: VisualsEntry) => {
+    const want = targetFor(p);
+    return want !== undefined && e.targetSeconds !== undefined && Math.abs(e.targetSeconds - want) > Math.max(5, want * 0.1);
+  };
+
   const statusOf = (p: CoursePage): Status => {
     if (!p.text.trim()) return 'empty';
     if (slideSize(p.text).level === 'toolong') return 'toolong';
     const e = entries[p.id];
-    if (e && e.slideText === p.text && e.lang === langFor(p) && (e.mode ?? 'read') === modeFor(p)) return e.voiceId === voice.id && e.report?.mode !== 'lines' ? 'ready' : 'revoice';
+    if (e && e.slideText === p.text && e.lang === langFor(p) && (e.mode ?? 'read') === modeFor(p) && !lengthDiffers(p, e)) return e.voiceId === voice.id && e.report?.mode !== 'lines' ? 'ready' : 'revoice';
     return 'todo';
   };
   const statuses = pages.map(statusOf);
@@ -98,11 +121,12 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
         try {
           const prev = entries[p.id];
           const { data, audio, report } = await produceSlide(
-            { text: p.text, lang, level, currency, mode, voice, reuse: st === 'revoice' && prev ? prev.data : null, context: st === 'todo' ? exampleContext(made) : undefined },
+            { text: p.text, lang, level, currency, mode, voice, reuse: st === 'revoice' && prev ? prev.data : null, context: st === 'todo' ? exampleContext(made) : undefined,
+              targetSeconds: mode === 'explain' ? targetFor(p) : undefined, totalMinutes: lengthPlanned ? totalMinutes : undefined, slideCount: lengthPlanned?.count },
             (phase, done, total, sub) => setNow({ index: i, phase, sub, done, total }),
             ctl.signal,
           );
-          onEntry(p.id, { data, audio, report, slideText: p.text, voiceId: voice.id, lang, mode });
+          onEntry(p.id, { data, audio, report, slideText: p.text, voiceId: voice.id, lang, mode, targetSeconds: mode === 'explain' ? targetFor(p) : prev?.targetSeconds });
           made.push(data);
         } catch (e: any) {
           if (e?.name === 'AbortError') throw e;
@@ -379,6 +403,29 @@ export const AllSlidesModal: React.FC<Props> = ({ pages, language, voice, entrie
                 <option value="read">{af ? 'Lees elke skyfie presies' : 'Read every slide exactly'}</option>
               </select>
             </label>
+            {lengthOn && lengthPlanned && (() => {
+              const { plan, count } = lengthPlanned;
+              const avg = plan.total / Math.max(1, count);
+              const made = ready.filter((x) => (x.e.mode ?? 'read') === 'explain').reduce((n, x) => n + (Object.values(x.e.audio) as string[]).reduce((m, u) => m + Math.max(0, (u.length * 0.75 - 44) / 48000), 0), 0);
+              return (
+                <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-1.5" data-testid="length-box">
+                  <label className="block text-[11px] font-bold text-slate-700">
+                    {af ? 'Lengte van die klaar aanbieding' : 'Length of the finished presentation'}: <span className="text-indigo-700" data-testid="length-value">{totalMinutes} min</span>
+                    <input type="range" min={MIN_TOTAL_MINUTES} max={MAX_TOTAL_MINUTES} step={1} value={totalMinutes} onChange={(e) => setTotalMinutes(Number(e.target.value))} disabled={running}
+                      className="mt-1.5 w-full accent-indigo-600" data-testid="length-slider" aria-label={af ? 'Lengte in minute' : 'Length in minutes'} />
+                    <span className="flex justify-between text-[9px] font-normal text-slate-400"><span>1 min</span><span>15</span><span>30 min</span></span>
+                  </label>
+                  <p className="text-[10px] text-slate-600 leading-snug" data-testid="length-detail">
+                    {af ? `Omtrent ${Math.round(avg)} sekondes (${Math.round((avg * WORDS_PER_MINUTE) / 60)} woorde) per skyfie, ${count} skyfies.` : `About ${Math.round(avg)} seconds (${Math.round((avg * WORDS_PER_MINUTE) / 60)} words) per slide, ${count} slide${count === 1 ? '' : 's'}.`}
+                    {' '}{af ? 'Korter = minder detail en voorbeelde; langer = meer detail en voorbeelde.' : 'Shorter = less detail and fewer examples; longer = more detail and more examples.'}
+                  </p>
+                  {plan.limited === 'max' && <p className="text-[10px] text-amber-800 leading-snug" data-testid="length-limit">{af ? `Met ${count} skyfie(s) is ${fmtSeconds(plan.achievable.max)} die langste moontlik (hoogstens ${fmtSeconds(MAX_SLIDE_SECONDS)} per skyfie, want 'n skyfie word in een opname gelees). Voeg skyfies by vir 'n langer aanbieding.` : `With ${count} slide${count === 1 ? '' : 's'} the longest possible is ${fmtSeconds(plan.achievable.max)} (at most ${fmtSeconds(MAX_SLIDE_SECONDS)} per slide, because a slide is voiced in one take). Add slides for a longer presentation.`}</p>}
+                  {plan.limited === 'min' && <p className="text-[10px] text-amber-800 leading-snug" data-testid="length-limit">{af ? `Met ${count} skyfies is ${fmtSeconds(plan.achievable.min)} die kortste moontlik (minstens ${MIN_SLIDE_SECONDS} sekondes per skyfie).` : `With ${count} slides the shortest possible is ${fmtSeconds(plan.achievable.min)} (at least ${MIN_SLIDE_SECONDS} seconds per slide).`}</p>}
+                  {made > 0 && <p className="text-[10px] text-slate-700 leading-snug" data-testid="length-actual">{af ? `Gemaak tot nou toe: ${fmtSeconds(made)} stem. Teiken: ${fmtSeconds(plan.total)}. Die stem se tempo is nie vooraf bekend nie, so die werklike lengte kan effens verskil.` : `Made so far: ${fmtSeconds(made)} of voice-over. Target: ${fmtSeconds(plan.total)}. The narrator's pace is not known in advance, so the real length can differ a little.`}</p>}
+                  <p className="text-[10px] text-slate-400 leading-snug">{af ? 'As jy die lengte verander ná die skyfies gemaak is, word hulle weer gemaak (Claude en stemkrediete).' : 'If you change the length after the slides are made, they are made again (Claude and voice credits).'}</p>
+                </div>
+              );
+            })()}
             <label className="block text-[11px] font-bold text-slate-700">
               {af ? 'Vir' : 'Audience'}
               <select value={level} onChange={(e) => setLevel(e.target.value as VisualsLevel)} disabled={running} className="mt-1 w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs">

@@ -16,7 +16,7 @@ const POLL_LIMIT = 240; // 8 minutes
 
 /** Asks the server for slide visuals built around the slide text, then waits for the result. */
 export async function generateVisuals(
-  params: { text: string; lang: 'en' | 'af'; level: VisualsLevel; currency: string; mode: VisualsMode; /** figures the earlier slides of the course already used */ context?: string },
+  params: { text: string; lang: 'en' | 'af'; level: VisualsLevel; currency: string; mode: VisualsMode; /** figures the earlier slides of the course already used */ context?: string; /** explain mode: seconds of narration for this slide, within a presentation of totalMinutes and slideCount slides */ targetSeconds?: number; totalMinutes?: number; slideCount?: number },
   signal?: AbortSignal,
 ): Promise<LessonData> {
   const start = await fetch('/api/visuals', {
@@ -135,14 +135,14 @@ export const autoMode = (text: string): VisualsMode => (text.trim().split(/\s+/)
  * Used by the all-slides producer; the single-slide window runs the same two steps itself so it can show each phase.
  */
 export async function produceSlide(
-  params: { text: string; lang: 'en' | 'af'; level: VisualsLevel; currency: string; mode: VisualsMode; voice: VoiceOption; reuse?: LessonData | null; context?: string },
+  params: { text: string; lang: 'en' | 'af'; level: VisualsLevel; currency: string; mode: VisualsMode; voice: VoiceOption; reuse?: LessonData | null; context?: string; targetSeconds?: number; totalMinutes?: number; slideCount?: number },
   onProgress: (phase: 'visuals' | 'voice', done: number, total: number, sub: string) => void,
   signal?: AbortSignal,
 ): Promise<{ data: LessonData; audio: Record<string, string>; report: NarrationReport }> {
   let data = params.reuse ?? null;
   if (!data) {
     onProgress('visuals', 0, 1, '');
-    data = await generateVisuals({ text: params.text, lang: params.lang, level: params.level, currency: params.currency, mode: params.mode, context: params.context }, signal);
+    data = await generateVisuals({ text: params.text, lang: params.lang, level: params.level, currency: params.currency, mode: params.mode, context: params.context, targetSeconds: params.targetSeconds, totalMinutes: params.totalMinutes, slideCount: params.slideCount }, signal);
   }
   onProgress('voice', 0, 3, 'take');
   const { audio, report } = await narrateLines(data, params.voice, params.lang === 'af', (done, total, sub) => onProgress('voice', done, total, sub), signal, data.pronunciations as Record<string, string> | undefined);

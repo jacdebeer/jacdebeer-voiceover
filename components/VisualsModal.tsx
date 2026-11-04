@@ -20,6 +20,8 @@ export interface VisualsEntry {
   lang: 'en' | 'af';
   /** changed in the chat, so it no longer matches the slide script word for word */
   edited?: boolean;
+  /** explain mode in the all-slides window: the seconds of narration this slide was written for */
+  targetSeconds?: number;
 }
 
 interface Props {
