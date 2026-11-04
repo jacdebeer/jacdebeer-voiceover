@@ -3,7 +3,7 @@ import {
   Mic, BookOpen, Sparkles, AlertCircle, ArrowRightLeft, ChevronLeft, ChevronRight, 
   ScanSearch, FileUp, Gauge, Volume2, Loader, Square, Layers, Wand2, Trash2, 
   X, HelpCircle, Library, CheckCircle2, Plus, Scissors, Combine, ArrowBigRightDash, 
-  Radio, FileText, AudioWaveform, MessageSquare, Languages, Undo2, Presentation, ScrollText
+  Radio, FileText, AudioWaveform, MessageSquare, Languages, Undo2, Presentation, ScrollText, MoreHorizontal, ArrowLeft, ArrowRight
 } from 'lucide-react';
 import { VoiceName, VOICE_OPTIONS, AudioState, CoursePage, VoiceOption } from './types';
 import { generateSpeechForVoice, generateCheckedSpeech, translateText, enhanceConversationalScript, fetchLibraryVoices, fetchElevenLabsVoices } from './services/geminiService';
@@ -20,7 +20,7 @@ import { BalanceModal } from './components/BalanceModal';
 import { AllSlidesModal } from './components/AllSlidesModal';
 import { RulesModal } from './components/RulesModal';
 import { fetchRules } from './services/rulesService';
-import { slideSize, SLIDE_LIMITS } from './utils/slideBalance';
+import { slideSize, SLIDE_LIMITS, balanceSlides } from './utils/slideBalance';
 import { BRAND } from './brand/brand';
 import { isAfrikaansText } from './utils/language';
 
@@ -186,6 +186,17 @@ const App: React.FC = () => {
   const [showLibrary, setShowLibrary] = useState(false);
   const [showBalance, setShowBalance] = useState(false);
   const [showRules, setShowRules] = useState(false);
+  // the slide strip: a slide being dragged, where it would land, and the open slide menu
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+  const [slideMenu, setSlideMenu] = useState<{ index: number; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!slideMenu) return;
+    const close = () => setSlideMenu(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [slideMenu]);
   // the user's rules for future lessons: pronunciation rules are used by every voicing
   useEffect(() => { void fetchRules(); }, []);
   const [showAllVisuals, setShowAllVisuals] = useState(false);
@@ -870,32 +881,55 @@ const App: React.FC = () => {
   };
 
   // Handlers for Transcription Panel insertion
-  const handleApplyTranscriptionToCurrentSlide = (transcribed: string) => {
-    setText(transcribed);
-    setPages(prev => {
-      const newPages = [...prev];
-      newPages[pageIndex] = { ...newPages[pageIndex], text: transcribed, audioData: undefined };
-      return newPages;
-    });
+  // Both work inside the open project: one replaces a slide of it, the other adds slides to it. Each can be undone.
+  const handleApplyTranscriptionToCurrentSlide = (transcribed: string, target: number = pageIndex) => {
+    const i = Math.min(Math.max(target, 0), pages.length - 1);
+    snapshot(af ? `Skyfie ${i + 1} vervang deur die transkripsie` : `Slide ${i + 1} replaced by the transcription`);
+    const next = pages.map((p, k) => (k === i ? { ...p, text: transcribed, audioData: undefined } : p));
+    setPages(next);
     setAudioState(prev => ({ ...prev, hasAudio: false }));
+    goToPage(i, next);
     setActiveTab('studio');
   };
 
-  const handleApplyTranscriptionAsNewSlides = (transcribed: string) => {
-    // Split by paragraphs or double newlines
-    const chunks = transcribed.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
-    if (chunks.length === 0) chunks.push(transcribed);
-    
-    const newSlideList: CoursePage[] = chunks.map((chunk, idx) => ({
-      id: Date.now() + idx,
-      text: chunk,
-    }));
-
-    setPages(newSlideList);
-    setPageIndex(0);
-    setText(newSlideList[0].text);
-    setAudioState(prev => ({ ...prev, hasAudio: false }));
+  const handleApplyTranscriptionAsNewSlides = (transcribed: string, after: number = pageIndex) => {
+    // paragraphs become slides; a paragraph that is too long to produce is cut into balanced slides
+    const chunks = transcribed.split(/\n\s*\n/).map(x => x.trim()).filter(Boolean);
+    if (chunks.length === 0 && transcribed.trim()) chunks.push(transcribed.trim());
+    const texts = chunks.flatMap((c) => balanceSlides([c]).map((r) => r.text)).filter((x) => x.trim());
+    if (!texts.length) return;
+    const at = Math.min(Math.max(after, 0), pages.length - 1);
+    snapshot(af ? `${texts.length} nuwe skyfie(s) bygevoeg na skyfie ${at + 1}` : `${texts.length} new slide(s) added after slide ${at + 1}`);
+    const base = Date.now();
+    const added: CoursePage[] = texts.map((text, idx) => ({ id: base + idx, text }));
+    const next = [...pages.slice(0, at + 1), ...added, ...pages.slice(at + 1)];
+    setPages(next);
+    goToPage(at + 1, next);
     setActiveTab('studio');
+  };
+
+  // ---- any slide can be deleted or moved to another position (undo brings it back)
+  const deleteSlideAt = (i: number) => {
+    if (i < 0 || i >= pages.length) return;
+    if (pages.length <= 1) { handleDeleteBlock(); return; }
+    snapshot(af ? `Skyfie ${i + 1} verwyder` : `Slide ${i + 1} deleted`);
+    const next = pages.filter((_, k) => k !== i);
+    const keep = i < pageIndex ? pageIndex - 1 : Math.min(pageIndex, next.length - 1);
+    setPages(next);
+    setVisualsBySlide((prev) => { const n = { ...prev }; delete n[pages[i].id]; return n; });
+    goToPage(i === pageIndex ? Math.min(i, next.length - 1) : keep, next);
+  };
+
+  const moveSlide = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= pages.length || to >= pages.length) return;
+    snapshot(af ? `Skyfie ${from + 1} geskuif na posisie ${to + 1}` : `Slide ${from + 1} moved to position ${to + 1}`);
+    const next = [...pages];
+    const [m] = next.splice(from, 1);
+    next.splice(to, 0, m);
+    setPages(next);
+    // stay on the slide the user was on, wherever it ended up
+    const cur = pages[pageIndex].id;
+    goToPage(next.findIndex((p) => p.id === cur), next);
   };
 
   const handleInsertLiveTextToSlide = (textToAdd: string) => {
@@ -918,7 +952,7 @@ const App: React.FC = () => {
     <div className="h-full flex flex-col overflow-hidden bg-slate-50 font-sans selection:bg-indigo-100">
       
       {/* Top Application Bar */}
-      <header className="flex-none flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200 max-w-[1600px] mx-auto w-full">
+      <header className="flex-none flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-6 py-3 bg-white border-b border-slate-200 max-w-[1600px] mx-auto w-full">
         <div className="flex items-center gap-3">
           <img src={BRAND.logoMark} alt={BRAND.name} className="h-11 w-auto" />
           <div className="hidden sm:block">
@@ -934,7 +968,7 @@ const App: React.FC = () => {
           <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-inner">
             <button
               onClick={() => setActiveTab('studio')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
                 activeTab === 'studio'
                   ? 'bg-white text-indigo-700 shadow-sm'
                   : 'text-slate-500 hover:text-slate-800'
@@ -945,7 +979,7 @@ const App: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('transcribe')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
                 activeTab === 'transcribe'
                   ? 'bg-white text-indigo-700 shadow-sm'
                   : 'text-slate-500 hover:text-slate-800'
@@ -1036,6 +1070,8 @@ const App: React.FC = () => {
             currentLanguage={language}
             onApplyToSlide={handleApplyTranscriptionToCurrentSlide}
             onApplyAsNewSlides={handleApplyTranscriptionAsNewSlides}
+            slides={pages.map((p) => p.text.trim().split(/\n/)[0].slice(0, 36))}
+            currentSlide={pageIndex}
             transcribedText={transcribedText}
             onTranscribedTextChange={setTranscribedText}
             voiceoverText={voiceoverText}
@@ -1124,20 +1160,35 @@ const App: React.FC = () => {
                   const on = i === pageIndex;
                   const vis = visualsBySlide[p.id];
                   return (
-                    <button key={p.id} role="tab" aria-selected={on} onClick={() => goToPage(i)} style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
-                      className={`anim-fade-up flex-none w-32 text-left rounded-lg border px-2 py-1.5 transition-all ${on ? 'bg-white border-indigo-300 shadow-sm' : 'bg-white/60 border-slate-200 hover:bg-white'}`}
-                      title={p.text.trim().slice(0, 140)}>
-                      <div className="flex items-center justify-between gap-1">
-                        <span className={`text-[10px] font-bold ${on ? 'text-indigo-700' : 'text-slate-500'}`}>{i + 1}</span>
-                        <span className="flex items-center gap-1 text-[9px]">
-                          {p.audioData && <span title={af ? 'Klank gemaak' : 'Audio made'}>🔊</span>}
-                          {vis && vis.slideText === p.text && <span title={af ? 'Beelde gemaak' : 'Visuals made'}>✨</span>}
-                          {sz.level === 'toolong' && <span title={af ? 'Te lank' : 'Too long'}>⚠️</span>}
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-slate-600 truncate leading-tight mt-0.5">{(i === pageIndex ? text : p.text).trim().split(/\n/)[0].slice(0, 40) || '—'}</div>
-                      <div className="h-1 rounded bg-slate-100 overflow-hidden mt-1"><div className={`h-full ${sz.level === 'toolong' ? 'bg-rose-500' : sz.level === 'long' ? 'bg-amber-400' : 'bg-violet-400'}`} style={{ width: `${Math.min(100, (sz.chars / SLIDE_LIMITS.maxChars) * 100)}%` }} /></div>
-                    </button>
+                    <div key={p.id} className="relative flex-none group" data-testid="strip-slide"
+                      draggable
+                      onDragStart={(e) => { setDragFrom(i); setSlideMenu(null); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(i)); } catch { /* some browsers need data to start a drag */ } }}
+                      onDragOver={(e) => { if (dragFrom !== null) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOver !== i) setDragOver(i); } }}
+                      onDragLeave={() => { if (dragOver === i) setDragOver(null); }}
+                      onDrop={(e) => { e.preventDefault(); if (dragFrom !== null) moveSlide(dragFrom, i); setDragFrom(null); setDragOver(null); }}
+                      onDragEnd={() => { setDragFrom(null); setDragOver(null); }}>
+                      {dragOver === i && dragFrom !== null && dragFrom !== i && <div className={`absolute top-0 bottom-0 w-1 rounded bg-indigo-500 z-10 ${dragFrom < i ? '-right-1' : '-left-1'}`} />}
+                      <button role="tab" aria-selected={on} onClick={() => goToPage(i)} style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
+                        className={`anim-fade-up w-32 text-left rounded-lg border px-2 py-1.5 transition-all cursor-grab active:cursor-grabbing ${on ? 'bg-white border-indigo-300 shadow-sm' : 'bg-white/60 border-slate-200 hover:bg-white'} ${dragFrom === i ? 'opacity-40' : ''}`}
+                        title={p.text.trim().slice(0, 140)}>
+                        <div className="flex items-center justify-between gap-1 pr-4">
+                          <span className={`text-[10px] font-bold ${on ? 'text-indigo-700' : 'text-slate-500'}`}>{i + 1}</span>
+                          <span className="flex items-center gap-1 text-[9px]">
+                            {p.audioData && <span title={af ? 'Klank gemaak' : 'Audio made'}>🔊</span>}
+                            {vis && vis.slideText === p.text && <span title={af ? 'Beelde gemaak' : 'Visuals made'}>✨</span>}
+                            {sz.level === 'toolong' && <span title={af ? 'Te lank' : 'Too long'}>⚠️</span>}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-600 truncate leading-tight mt-0.5">{(i === pageIndex ? text : p.text).trim().split(/\n/)[0].slice(0, 40) || '—'}</div>
+                        <div className="h-1 rounded bg-slate-100 overflow-hidden mt-1"><div className={`h-full ${sz.level === 'toolong' ? 'bg-rose-500' : sz.level === 'long' ? 'bg-amber-400' : 'bg-violet-400'}`} style={{ width: `${Math.min(100, (sz.chars / SLIDE_LIMITS.maxChars) * 100)}%` }} /></div>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setSlideMenu(slideMenu?.index === i ? null : { index: i, x: Math.min(r.left, window.innerWidth - 230), y: r.bottom + 4 }); }}
+                        className={`absolute top-1 right-1 w-5 h-5 rounded flex items-center justify-center text-slate-400 hover:text-indigo-700 hover:bg-indigo-50 ${on || slideMenu?.index === i ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'}`}
+                        aria-label={af ? `Skyfie ${i + 1}: skuif of verwyder` : `Slide ${i + 1}: move or delete`} data-testid={`slide-menu-${i}`}>
+                        <MoreHorizontal size={13} />
+                      </button>
+                    </div>
                   );
                 })}
                 <button onClick={handleAddBlock} className="flex-none w-9 h-12 rounded-lg border border-dashed border-slate-300 text-slate-400 hover:text-indigo-600 hover:border-indigo-300 flex items-center justify-center" title={t.addBlock} aria-label={t.addBlock}><Plus size={14} /></button>
@@ -1160,7 +1211,7 @@ const App: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <button onClick={handleDeleteBlock} className="p-1.5 text-slate-300 hover:text-rose-500 rounded-lg transition-colors" title={t.deleteBlock}><Trash2 size={15} /></button>
+                    <button onClick={() => deleteSlideAt(pageIndex)} className="p-1.5 text-slate-300 hover:text-rose-500 rounded-lg transition-colors" title={t.deleteBlock} aria-label={t.deleteBlock} data-testid="delete-current"><Trash2 size={15} /></button>
                     <div className="flex items-center space-x-1 bg-white rounded-lg border border-slate-200 p-0.5 shadow-sm">
                       <button onClick={() => handlePageChange('prev')} disabled={pageIndex === 0} className="p-1 hover:bg-slate-100 rounded disabled:opacity-20" aria-label="Previous slide"><ChevronLeft size={14} /></button>
                       <span className="text-[10px] font-bold text-slate-700 w-20 text-center uppercase">{t.block} {pageIndex + 1}/{pages.length}</span>
@@ -1348,6 +1399,29 @@ const App: React.FC = () => {
         currentLanguage={language}
         onInsertToSlide={handleInsertLiveTextToSlide}
       />
+      )}
+
+      {slideMenu && (
+        <>
+          <div className="fixed inset-0 z-[70]" onClick={() => setSlideMenu(null)} />
+          <div className="fixed z-[71] w-56 bg-white rounded-xl border border-slate-200 shadow-2xl p-3 space-y-2 anim-pop" style={{ left: slideMenu.x, top: slideMenu.y }} role="menu" data-testid="slide-menu">
+            <div className="brand-label text-[11px] text-slate-500">{af ? `Skyfie ${slideMenu.index + 1}` : `Slide ${slideMenu.index + 1}`}</div>
+            <label className="block text-[11px] font-bold text-slate-700">
+              {af ? 'Skuif na posisie' : 'Move to position'}
+              <select value={slideMenu.index} onChange={(e) => { const to = Number(e.target.value); const from = slideMenu.index; setSlideMenu(null); moveSlide(from, to); }}
+                className="mt-1 w-full px-2 py-1.5 rounded-lg border border-slate-300 text-xs" data-testid="move-to">
+                {pages.map((_, k) => <option key={k} value={k}>{k + 1}</option>)}
+              </select>
+            </label>
+            <div className="flex gap-2">
+              <button disabled={slideMenu.index === 0} onClick={() => { const i = slideMenu.index; setSlideMenu(null); moveSlide(i, i - 1); }} className="flex-1 py-1.5 rounded-lg border border-slate-200 text-[11px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-30 flex items-center justify-center gap-1"><ArrowLeft size={11} /> {af ? 'Links' : 'Left'}</button>
+              <button disabled={slideMenu.index === pages.length - 1} onClick={() => { const i = slideMenu.index; setSlideMenu(null); moveSlide(i, i + 1); }} className="flex-1 py-1.5 rounded-lg border border-slate-200 text-[11px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-30 flex items-center justify-center gap-1">{af ? 'Regs' : 'Right'} <ArrowRight size={11} /></button>
+            </div>
+            <button onClick={() => { const i = slideMenu.index; setSlideMenu(null); deleteSlideAt(i); }} data-testid="menu-delete"
+              className="w-full py-1.5 rounded-lg border border-rose-200 text-rose-700 text-[11px] font-bold hover:bg-rose-50 flex items-center justify-center gap-1.5"><Trash2 size={12} /> {af ? 'Verwyder skyfie' : 'Delete slide'}</button>
+            <p className="text-[10px] text-slate-400 leading-snug">{af ? 'Jy kan ook \'n skyfie na \'n ander plek sleep. Ontdoen staan bo die redigeerder.' : 'You can also drag a slide to another place. Undo is above the editor.'}</p>
+          </div>
+        </>
       )}
 
       {showRules && <RulesModal af={language === 'af'} onClose={() => setShowRules(false)} />}
