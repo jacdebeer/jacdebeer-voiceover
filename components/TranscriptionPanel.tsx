@@ -22,8 +22,13 @@ const triggerDownload = (url: string, filename: string) => {
 
 interface TranscriptionPanelProps {
   currentLanguage: 'en' | 'af';
-  onApplyToSlide: (text: string) => void;
-  onApplyAsNewSlides: (text: string) => void;
+  /** replaces the slide at this index of the open project */
+  onApplyToSlide: (text: string, slideIndex: number) => void;
+  /** adds slides to the open project after the slide at this index */
+  onApplyAsNewSlides: (text: string, afterIndex: number) => void;
+  /** the first words of every slide of the open project, and the one that is open */
+  slides: string[];
+  currentSlide: number;
   transcribedText: string;
   onTranscribedTextChange: (text: string) => void;
   /** the text that is read aloud in "Lees Transkripsie Voor"; filled with the copy-over button */
@@ -38,6 +43,8 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
   currentLanguage,
   onApplyToSlide,
   onApplyAsNewSlides,
+  slides,
+  currentSlide,
   transcribedText,
   onTranscribedTextChange: setTranscribedText,
   voiceoverText,
@@ -219,6 +226,9 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
     }
   };
 
+  // which slide of the open project the buttons below work on; it follows the open slide until it is changed here
+  const [target, setTarget] = useState(currentSlide);
+  useEffect(() => setTarget(currentSlide), [currentSlide, slides.length]);
   const voiceoverRef = useRef<HTMLTextAreaElement>(null);
   const [justCopied, setJustCopied] = useState(false);
   /** Moves (copies) the transcription over to the voice-over card, where it can be edited on its own before it is read aloud. */
@@ -568,16 +578,27 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
                     <span>{justCopied ? (currentLanguage === 'af' ? "Oorgekopieer" : "Copied over") : (currentLanguage === 'af' ? "Kopieer na Lees Voor" : "Copy to Voice-over")}</span>
                     <ArrowRight size={13} />
                   </button>
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-bold" title={currentLanguage === 'af' ? 'Die skyfie in die oop projek waarmee die knoppies werk' : 'The slide of the open project the buttons work on'}>
+                    <span>{currentLanguage === 'af' ? 'Skyfie' : 'Slide'}</span>
+                    <select value={Math.min(target, slides.length - 1)} onChange={(e) => setTarget(Number(e.target.value))} data-testid="target-slide"
+                      className="max-w-[170px] px-1.5 py-1 rounded-lg border border-slate-200 bg-white text-xs text-slate-700">
+                      {slides.map((s, i) => <option key={i} value={i}>{i + 1}{s ? ` · ${s}` : ''}</option>)}
+                    </select>
+                  </div>
                   <button
-                    onClick={() => onApplyToSlide(transcribedText)}
+                    onClick={() => onApplyToSlide(transcribedText, Math.min(target, slides.length - 1))}
+                    data-testid="replace-slide"
                     className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+                    title={currentLanguage === 'af' ? 'Vervang die teks van die gekose skyfie in die oop projek' : 'Replace the text of the chosen slide in the open project'}
                   >
                     <span>{currentLanguage === 'af' ? "Vervang Huidige Skyfie" : "Apply to Current Slide"}</span>
                     <ArrowRight size={13} />
                   </button>
                   <button
-                    onClick={() => onApplyAsNewSlides(transcribedText)}
+                    onClick={() => onApplyAsNewSlides(transcribedText, Math.min(target, slides.length - 1))}
+                    data-testid="add-slides"
                     className="px-3 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+                    title={currentLanguage === 'af' ? 'Voeg nuwe skyfies by die oop projek, ná die gekose skyfie' : 'Add new slides to the open project, after the chosen slide'}
                   >
                     <Sparkles size={13} />
                     <span>{currentLanguage === 'af' ? "Skep Nuwe Skyfies" : "Create Slides"}</span>
