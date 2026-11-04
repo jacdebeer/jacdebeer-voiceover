@@ -1,6 +1,7 @@
 // Background worker for the lesson chat: asks Claude, validates the proposed edit, stores the answer for polling.
 import { getStore } from '@netlify/blobs';
 import { CHAT_STORE, runChat } from '../lib/chatJob.mts';
+import { loadRules, rulesPromptBlock } from '../lib/rules.mts';
 
 export default async (req: Request): Promise<Response> => {
   let jobId: string | undefined;
@@ -19,7 +20,7 @@ export default async (req: Request): Promise<Response> => {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error('The server is missing its Anthropic API key.');
-    const result = await runChat(job.input, apiKey);
+    const result = await runChat({ ...job.input, houseRules: rulesPromptBlock(await loadRules(job.owner)) }, apiKey);
     await store.setJSON(jobId, { ...base, status: 'done', result });
   } catch (err: any) {
     await store.setJSON(jobId, { ...base, status: 'error', error: err?.message || 'The chat failed.' });

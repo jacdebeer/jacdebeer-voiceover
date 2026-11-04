@@ -4,6 +4,7 @@ import { decodeBase64, pcmToWavBlob } from '../utils/audioUtils';
 import { LessonData, spokenLines } from './lessonPlayer';
 import { cleanClip, normalizeLoudness } from '../utils/audioClean';
 import { splitTake, finishSegment } from '../utils/segmentTake';
+import { getGlobalPronunciations } from './rulesService';
 
 /** read: voice the slide text exactly as written. explain: Claude writes a lecturer's explanation from the slide outline. */
 export type VisualsMode = 'read' | 'explain';
@@ -71,6 +72,8 @@ export async function narrateLines(
   signal?: AbortSignal,
   pronunciations?: Record<string, string>,
 ): Promise<{ audio: Record<string, string>; report: NarrationReport }> {
+  // the user's pronunciation rules apply to every voicing; the lesson's own pronunciations win
+  pronunciations = { ...getGlobalPronunciations(), ...(pronunciations ?? {}) };
   const lines = orderedLines(data);
   const audio: Record<string, string> = {};
   if (!lines.length) return { audio, report: { mode: 'take', note: 'no spoken lines' } };

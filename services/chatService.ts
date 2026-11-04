@@ -28,7 +28,9 @@ export function timeOfChange(tl: LessonTimeline | null, c: { beat: number; from?
   return tl.beats[c.beat]?.start ?? null;
 }
 
-export interface ChatProposal { summary: string; lesson: LessonData; changes: ChatChanges }
+import type { SuggestedRule } from './rulesService';
+
+export interface ChatProposal { summary: string; lesson: LessonData; changes: ChatChanges; /** the same change as a rule for every future lesson */ rule?: SuggestedRule }
 export interface ChatAnswer { reply: string; proposal: ChatProposal | null }
 
 const POLL_MS = 1500;

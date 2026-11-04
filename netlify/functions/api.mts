@@ -5,6 +5,7 @@ import type { Config } from '@netlify/functions';
 import { embedRoute, libraryRoute } from '../lib/library.mts';
 import { VISUALS_STORE, LEVELS, type Level, type Mode } from '../lib/visualsJob.mts';
 import { CHAT_STORE, MAX_LESSON_CHARS, MAX_MESSAGE_CHARS, cleanTimeline } from '../lib/chatJob.mts';
+import { loadRules, addRule, updateRule, deleteRule, pronunciationMap } from '../lib/rules.mts';
 import { ELEVENLABS_BASE, ELEVENLABS_VOICE_ID, TTS_STORE, SYNC_TTS_MAX_CHARS, elevenSpeech, quotaMessage } from '../lib/elevenTts.mts';
 // @ts-ignore - plain JS module
 import { afrikaansGlossaryPrompt } from '../lib/afrikaansTerms.mjs';
@@ -137,6 +138,34 @@ async function ttsElevenLabs(body: any): Promise<Response> {
     return json({ error: r.message }, 502);
   }
   return json({ audioBase64: Buffer.from(r.bytes).toString('base64') });
+}
+
+// The user's rules for every future lesson (see netlify/lib/rules.mts)
+async function rulesRoute(req: Request, route: string, userKey: string): Promise<Response | null> {
+  if (route === '/api/rules' && req.method === 'GET') {
+    const rules = await loadRules(userKey);
+    return json({ rules, pronunciations: pronunciationMap(rules) });
+  }
+  if (route === '/api/rules' && req.method === 'POST') {
+    let body: any;
+    try { body = await req.json(); } catch { return json({ error: 'Invalid request body' }, 400); }
+    const r = await addRule(userKey, body?.rule);
+    if (r.error) return json({ error: r.error }, 400);
+    return json({ rules: r.rules, added: r.added, pronunciations: pronunciationMap(r.rules) });
+  }
+  const m = route.match(/^\/api\/rules\/([0-9a-f-]{36})$/i);
+  if (m && req.method === 'PATCH') {
+    let body: any;
+    try { body = await req.json(); } catch { return json({ error: 'Invalid request body' }, 400); }
+    const rules = await updateRule(userKey, m[1], { active: body?.active });
+    if (!rules) return json({ error: 'Rule not found.' }, 404);
+    return json({ rules, pronunciations: pronunciationMap(rules) });
+  }
+  if (m && req.method === 'DELETE') {
+    const rules = await deleteRule(userKey, m[1]);
+    return json({ rules, pronunciations: pronunciationMap(rules) });
+  }
+  return null;
 }
 
 // A whole slide as one take: runs in a background function and is fetched as MP3 when it is done.
@@ -569,6 +598,13 @@ export default async (req: Request): Promise<Response> => {
   } catch (error) {
     console.error('Visuals request failed:', error);
     return json({ error: 'Could not start the visuals job.' }, 502);
+  }
+  try {
+    const rr = await rulesRoute(req, route, user.id);
+    if (rr) return rr;
+  } catch (error) {
+    console.error('Rules request failed:', error);
+    return json({ error: 'Could not reach your rules.' }, 502);
   }
   try {
     const job = await ttsJobRoute(req, route, user.id);

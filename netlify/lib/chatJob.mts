@@ -9,6 +9,7 @@ import { applyPatch, describeChanges } from './lessonPatch.mjs';
 // @ts-ignore - plain JS module
 import { addDefaultIcons, normalizeBookkeeping } from './lessonRepair.mjs';
 import { callMessages } from './anthropic.mts';
+import { cleanRule } from './rules.mts';
 
 export const CHAT_STORE = 'chat-jobs';
 export const CHAT_MAX_OUTPUT_TOKENS = 16000;
@@ -19,7 +20,7 @@ export interface ChatMessage { role: 'user' | 'assistant'; text: string }
 export interface TimelineItem { t: number; kind: string; text: string; blocks: number[] }
 export interface TimelineBeat { title: string; start: number; end: number; blockTypes: string[]; items: TimelineItem[] }
 export interface Timeline { total: number; beats: TimelineBeat[] }
-export interface ChatInput { lesson: any; messages: ChatMessage[]; lang: 'en' | 'af'; mode?: 'read' | 'explain'; timeline?: Timeline | null; now?: number | null }
+export interface ChatInput { lesson: any; messages: ChatMessage[]; lang: 'en' | 'af'; mode?: 'read' | 'explain'; timeline?: Timeline | null; now?: number | null; /** the user's standing rules, as a prompt block */ houseRules?: string }
 
 const num = (v: unknown) => (typeof v === 'number' && isFinite(v) ? Math.round(Math.max(0, Math.min(v, 36000)) * 10) / 10 : 0);
 
@@ -56,9 +57,10 @@ function timelineText(tl: Timeline, now: number | null | undefined): string {
   }
   return `Timeline of the video, in minutes:seconds from the start. The user only knows these times, not the beat numbers:\n${lines.join('\n')}${nowLine}`;
 }
+export interface SuggestedRule { kind: 'instruction' | 'pronunciation'; text: string; word?: string; say?: string }
 export interface ChatResult {
   reply: string;
-  proposal: null | { summary: string; lesson: any; changes: any };
+  proposal: null | { summary: string; lesson: any; changes: any; /** the same change as a rule for every future lesson, when it is one */ rule?: SuggestedRule };
 }
 
 const EDIT_RULES = [
@@ -68,6 +70,7 @@ const EDIT_RULES = [
   '',
   'Reply with ONE JSON object and nothing else:',
   '{ "reply": string, "proposal": null | { "summary": string, "ops": [ { "op": "add"|"replace"|"remove", "path": string, "value"?: any } ] } }',
+  '- "rule" (optional, inside "proposal"): when the request is a standing preference that should hold for EVERY lesson from now on (a convention, terminology, wording or layout rule, how a word is pronounced, "always", "from now on", "for all lessons") and not just a change to this lesson, also give it as a rule: {"kind":"instruction","text":"one imperative sentence in English that a lesson-writer can follow every time, without mentioning this lesson"} or, for a pronunciation, {"kind":"pronunciation","word":"Bates","say":"Baates"}. The user then chooses whether to change this file, make it a rule for all future lessons, or both. A one-off content change (this figure, this title, this sentence) gets no rule. If the user only states a rule and this lesson needs no change, give "ops" as an empty list and the "rule".',
   '- "reply": short, plain, friendly, in the language the user writes in. Say what you will change, or ask ONE clarifying question when the request is ambiguous (then "proposal" is null). When you only answer a question, "proposal" is null. Never mention JSON, paths or operations.',
   '- "summary": one sentence describing the change for the confirmation card, in the language of the lesson.',
   '- "ops": RFC 6902 JSON Patch against the lesson document you are given. Paths are JSON Pointers, arrays are 0-based ("/beats/2/blocks/0/rows/1"). Append to an array with "/-". At most 40 operations. Allowed top-level keys: icon, title, subtitle, currency, labels, scenario, beats, pronunciations.',
@@ -90,8 +93,8 @@ const COMBINED_RULES = [
   'COMBINED LESSON. This lesson is made of several slides, one after the other. Every beat has a "group" that names its slide. Keep the "group" of every existing beat exactly as it is, do not move a beat to another slide, and give a new beat the same "group" as the beat before it. A slide must keep at least one beat. Times in the timeline run through the whole lesson.',
 ].join('\n');
 
-export function buildChatSystem(lang: 'en' | 'af', combined = false): string {
-  return SYSTEM + '\n' + EDIT_RULES + (combined ? COMBINED_RULES : '') + (lang === 'af' ? '\n\n' + afrikaansGlossaryPrompt() : '');
+export function buildChatSystem(lang: 'en' | 'af', combined = false, houseRules = ''): string {
+  return SYSTEM + '\n' + EDIT_RULES + (combined ? COMBINED_RULES : '') + (houseRules || '') + (lang === 'af' ? '\n\n' + afrikaansGlossaryPrompt() : '');
 }
 
 /** The conversation as Anthropic messages: roles alternate, start with the user, and the last turn carries the lesson. */
@@ -139,8 +142,13 @@ async function callModel(apiKey: string, system: string, messages: any[], fetchI
 }
 
 /** Asks Claude, checks any proposal against the lesson rules, and gives the model one chance to repair a bad proposal. */
+function cleanSuggestedRule(r: any): SuggestedRule | null {
+  const c = cleanRule(r);
+  return c ? { kind: c.kind, text: c.text, ...(c.word ? { word: c.word } : {}), ...(c.say ? { say: c.say } : {}) } : null;
+}
+
 export async function runChat(input: ChatInput, apiKey: string, fetchImpl: typeof fetch = fetch): Promise<ChatResult> {
-  const system = buildChatSystem(input.lang, input.lesson?.mode === 'combined');
+  const system = buildChatSystem(input.lang, input.lesson?.mode === 'combined', input.houseRules || '');
   const messages: any[] = buildChatMessages(input);
   let lastError = '';
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -155,7 +163,13 @@ export async function runChat(input: ChatInput, apiKey: string, fetchImpl: typeo
     }
     const reply = typeof parsed?.reply === 'string' ? parsed.reply.trim().slice(0, 1500) : '';
     const p = parsed?.proposal;
+    const rule = cleanSuggestedRule(p?.rule);
     if (!p || !Array.isArray(p.ops) || !p.ops.length) {
+      // a rule for the future with nothing to change in this file
+      if (p && rule) {
+        const summary = typeof p.summary === 'string' && p.summary.trim() ? p.summary.trim().slice(0, 300) : rule.text;
+        return { reply: reply || summary, proposal: { summary, lesson: input.lesson, changes: { spoken: [], newLines: 0, beatsAdded: 0, beatsRemoved: 0, blocksChanged: 0, pronunciationsChanged: false }, rule } };
+      }
       return { reply: reply || 'Tell me what you would like to change.', proposal: null };
     }
     try {
@@ -165,9 +179,9 @@ export async function runChat(input: ChatInput, apiKey: string, fetchImpl: typeo
       const changes = describeChanges(input.lesson, after);
       const nothing = !changes.spoken.length && !changes.blocksChanged && !changes.beatsAdded && !changes.beatsRemoved && !changes.pronunciationsChanged &&
         JSON.stringify(after) === JSON.stringify(input.lesson);
-      if (nothing) return { reply: reply || 'Nothing would change.', proposal: null };
+      if (nothing && !rule) return { reply: reply || 'Nothing would change.', proposal: null };
       const summary = typeof p.summary === 'string' && p.summary.trim() ? p.summary.trim().slice(0, 300) : 'Apply the proposed changes';
-      return { reply: reply || summary, proposal: { summary, lesson: after, changes } };
+      return { reply: reply || summary, proposal: { summary, lesson: after, changes, ...(rule ? { rule } : {}) } };
     } catch (e: any) {
       lastError = String(e?.message || e);
       messages.push({ role: 'assistant', content: raw.slice(0, 6000) }, {

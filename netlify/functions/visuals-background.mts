@@ -5,6 +5,7 @@ import { getStore } from '@netlify/blobs';
 import { repairSpokenLines, dedupeSelf, addDefaultIcons, stripIllustrationNotes, tidyApostrophes, normalizeBookkeeping } from '../lib/lessonRepair.mjs';
 import { VISUALS_STORE, VISUALS_MAX_OUTPUT_TOKENS, buildSystem, buildUserText } from '../lib/visualsJob.mts';
 import { callMessages } from '../lib/anthropic.mts';
+import { loadRules, rulesPromptBlock } from '../lib/rules.mts';
 
 export default async (req: Request): Promise<Response> => {
   let jobId: string | undefined;
@@ -28,7 +29,7 @@ export default async (req: Request): Promise<Response> => {
 
     const result = await callMessages(apiKey, {
       max_tokens: VISUALS_MAX_OUTPUT_TOKENS,
-      system: buildSystem(job.input.lang, job.input.mode),
+      system: buildSystem(job.input.lang, job.input.mode) + rulesPromptBlock(await loadRules(job.owner)),
       messages: [{ role: 'user', content: buildUserText(job.input) }],
     });
     if (result.ok === false) throw new Error(`Anthropic API error ${result.status}: ${result.message}`);
