@@ -19,6 +19,7 @@ import { LibraryModal } from './components/LibraryModal';
 import { BalanceModal } from './components/BalanceModal';
 import { AllSlidesModal } from './components/AllSlidesModal';
 import { RulesModal } from './components/RulesModal';
+import { HelpModal } from './components/HelpModal';
 import { fetchRules } from './services/rulesService';
 import { slideSize, SLIDE_LIMITS, balanceSlides } from './utils/slideBalance';
 import { BRAND } from './brand/brand';
@@ -186,6 +187,7 @@ const App: React.FC = () => {
   const [showLibrary, setShowLibrary] = useState(false);
   const [showBalance, setShowBalance] = useState(false);
   const [showRules, setShowRules] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   // the slide strip: a slide being dragged, where it would land, and the open slide menu
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
@@ -1025,6 +1027,15 @@ const App: React.FC = () => {
             <ScrollText size={14} />
             <span>{language === 'af' ? 'Reëls' : 'Rules'}</span>
           </button>
+          <button
+            onClick={() => setShowHelp(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200"
+            title={language === 'af' ? 'Hulp: handleiding' : 'Help: how to use'}
+            data-testid="header-help"
+          >
+            <HelpCircle size={14} />
+            <span>{language === 'af' ? 'Hulp' : 'Help'}</span>
+          </button>
           <button 
             onClick={() => setCurrentStep(1)} 
             className="text-slate-400 hover:text-indigo-600 transition-colors p-1.5 rounded-lg hover:bg-slate-100" 
@@ -1424,6 +1435,7 @@ const App: React.FC = () => {
         </>
       )}
 
+      {showHelp && <HelpModal af={language === 'af'} onClose={() => setShowHelp(false)} />}
       {showRules && <RulesModal af={language === 'af'} onClose={() => setShowRules(false)} />}
 
       {showLibrary && <LibraryModal language={language} onClose={() => setShowLibrary(false)} />}
