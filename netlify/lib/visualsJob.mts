@@ -2,6 +2,8 @@
 // @ts-ignore - plain JS module ported from GSA-accounts-explainer
 import { SYSTEM, RECORDING_RULES, LEDGER_RULE, LEVEL_GUIDES } from './lessonPrompt.mjs';
 // @ts-ignore - plain JS module
+import { lengthBlock } from './lengthPlan.mjs';
+// @ts-ignore - plain JS module
 import { afrikaansGlossaryPrompt } from './afrikaansTerms.mjs';
 
 export const VISUALS_STORE = 'visual-jobs';
@@ -45,7 +47,7 @@ const EXPLAIN_RULE = [
   '   - For each point say what it means and why it matters, then show it. Follow the real accounting cycle of rule F wherever the topic has one: source document, analysis, journal entry, ledger, accounting equation, then a short summary.',
   '   - When the topic needs figures, build ONE short worked example with simple round illustrative figures (for example 48 000 and 6 500), and do not add any note that the figures are for illustration. Never contradict the outline.',
   '   - Use the rich blocks: source_document, calculation, journal, t_accounts, ledger_columnar, equation, formula, cards, change, flow. Every beat needs at least one visual block that is not "text". Use "text" only for a short rule or note.',
-  '   - VOICE-OVER. Write what the lecturer says aloud, in natural spoken language, as if explaining to students in class. "caption" is ONE introducing sentence. "narration" holds one or two spoken sentences per revealed element (each table row, card, step, tile, chip). Plain words only: no symbols, no abbreviations, no digits (write "ses duisend vyf honderd rand"). About 150 to 300 words in total, 5 to 8 beats.',
+  '   - VOICE-OVER. Write what the lecturer says aloud, in natural spoken language, as if explaining to students in class. "caption" is ONE introducing sentence. "narration" holds one or two spoken sentences per revealed element (each table row, card, step, tile, chip). Plain words only: no symbols, no abbreviations, no digits (write "ses duisend vyf honderd rand"). About 150 to 300 words in total, 5 to 8 beats (unless rule L gives a length target).',
   '   - Never say a sentence twice: each spoken sentence appears exactly once in the whole lesson, in a caption or in one narration entry, never both. Do not mention "the slide".',
   '   - Omit "quiz" entirely: it would be silent.',
 ].join('\n');
@@ -67,7 +69,7 @@ export function buildSystem(lang: 'en' | 'af' = 'en', mode: Mode = 'read'): stri
   return body + '\n' + ICON_RULE + COVERAGE_RULE + FIT_RULE + (lang === 'af' ? '\n\n' + afrikaansGlossaryPrompt() : '');
 }
 
-export function buildUserText(opts: { text: string; lang: 'en' | 'af'; level: Level; currency: string; mode?: Mode; context?: string }): string {
+export function buildUserText(opts: { text: string; lang: 'en' | 'af'; level: Level; currency: string; mode?: Mode; context?: string; targetSeconds?: number; totalMinutes?: number; slideCount?: number }): string {
   const langName = opts.lang === 'af' ? 'Afrikaans' : 'English';
   const guide = (LEVEL_GUIDES as Record<string, string>)[opts.level];
   return (
@@ -81,6 +83,7 @@ export function buildUserText(opts: { text: string; lang: 'en' | 'af'; level: Le
       ? '\n\nSHARED EXAMPLE. Earlier slides of the same course already used these example figures (account, its entries, and the balance they add up to):\n' + opts.context +
         '\nWhen a T-account, journal, equation or calculation of this slide is about an account named above, use EXACTLY these amounts and counter-accounts and carry on from them: the closing balance of an earlier account is the opening balance (Saldo b/o) of the same account here, and a new entry builds on it. Only invent new figures for accounts that are not listed. Do not repeat the earlier slides\' entries as if they were new, and do not mention that the figures come from earlier slides.'
       : '') +
+    (opts.mode === 'explain' && opts.targetSeconds ? '\n\n' + lengthBlock(opts.targetSeconds, opts.totalMinutes ?? Math.max(1, Math.round((opts.targetSeconds * (opts.slideCount ?? 1)) / 60)), opts.slideCount ?? 1) : '') +
     (guide ? '\n\nAudience guide:\n' + guide : '') +
     '\n\n' + RECORDING_RULES +
     '\n\n' + LEDGER_RULE +

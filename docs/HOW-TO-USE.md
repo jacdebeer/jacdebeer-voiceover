@@ -13,6 +13,9 @@ The app turns slide text into a voiced lesson with animated accounting visuals, 
 4. **Make the visuals and voice** (*Skyfie-beelde*, step 3 on the right). There are two ways:
    - **This slide** (*Hierdie skyfie*): one slide, with the chat editor. Choose how the voice-over is made: *Explain the slide* (Claude writes a lecturer's explanation from short slide text) or *Read the slide text exactly*. Press *Generate visuals and voice*.
    - **All slides in one html** (*Alle skyfies in een html*): produces every slide in order, then builds one lesson with all of them. Slides that are already made are reused.
+     - With *Explain every slide* a slider appears: **Length of the finished presentation**, from 1 to 30 minutes. The time is shared over the slides (a slide with a longer outline gets a little more). A short target gives short slides with fewer examples; a long one gives more detail and a full worked example, and the longest also a second example and common mistakes. Every point of your outline is covered at any length.
+     - It is a target, not a guarantee: the narrator's pace is not known in advance, so the window shows the length actually made, next to the target. Each slide is between 10 seconds and 2 minutes 30 (a slide is voiced in one take), so 3 slides cannot fill 30 minutes; the window tells you the longest and shortest possible for your number of slides. Slides you read exactly keep the length of their text and are taken off the total.
+     - Changing the slider after the slides are made makes them again.
 5. **Finish.** *Download .html* gives one file with the voice-over inside; it plays in any browser. *Save to library* (*Stoor in biblioteek*) keeps it online, where you can reopen it, share it and copy an embed code (*Biblioteek* in the top bar).
 
 ## 1b. The library: saving, collections and editing again
@@ -66,7 +69,7 @@ What costs money: the **voice** (ElevenLabs credits or the Gemini quota, by the 
 5. **Make visuals first, voice when you are happy.** *Generate visuals and voice* does both; once the visuals are right, *Re-voice with the selected narrator* reuses them and only voices.
 6. **Let the all-slides window reuse finished slides.** It produces only slides that are not ready. Do not press *Regenerate* on a slide that is fine.
 7. **Keep slides short.** A slide is voiced as one take; shorter slides mean a smaller re-voice whenever one sentence changes. The limit is 2 400 characters, but 1 000 to 1 500 is a comfortable size.
-8. **Read mode costs less than Explain.** In *Read the slide text exactly* the voice says your text. In *Explain* Claude first writes 150 to 300 words and those are voiced too. Use Explain where you want the explanation written for you.
+8. **Set the length before you produce.** The length slider (Explain mode) decides how much is written and voiced, so a 5-minute presentation costs less voice than a 20-minute one; changing it afterwards makes the slides again. **Read mode costs less than Explain.** In *Read the slide text exactly* the voice says your text. In *Explain* Claude first writes 150 to 300 words and those are voiced too. Use Explain where you want the explanation written for you.
 9. **Test with one short slide.** Before voicing a whole course, run one slide to check the narrator, the accent and the visuals.
 10. **Turn a repeated correction into a rule.** A pronunciation or convention rule saved once (*this file and all future lessons*) saves repeating the same chat request, and the same re-voicing, in every lesson.
 11. **Use *Stop* when a run goes wrong.** It stops the next slides from being produced; finished slides are kept.

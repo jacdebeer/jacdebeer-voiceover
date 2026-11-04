@@ -425,13 +425,18 @@ async function visualsRoute(req: Request, route: string, userKey: string): Promi
     const currency = typeof body?.currency === 'string' && body.currency.trim() ? body.currency.trim().slice(0, 4) : 'R';
     // the example figures earlier slides of the same course used, so this slide continues the same example
     const context = typeof body?.context === 'string' && body.context.trim() ? body.context.trim().slice(0, 3000) : '';
+    // explain mode only: how long this slide's voice-over should be, as part of a presentation of totalMinutes
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+    const targetSeconds = mode === 'explain' && num(body?.targetSeconds) !== undefined ? Math.min(150, Math.max(10, Math.round(body.targetSeconds))) : undefined;
+    const totalMinutes = targetSeconds && num(body?.totalMinutes) !== undefined ? Math.min(30, Math.max(1, Math.round(body.totalMinutes))) : undefined;
+    const slideCount = targetSeconds && num(body?.slideCount) !== undefined ? Math.min(80, Math.max(1, Math.round(body.slideCount))) : undefined;
     if (!process.env.ANTHROPIC_API_KEY) return json({ error: 'The server is missing its Anthropic API key.' }, 500);
 
     const jobId = crypto.randomUUID();
     await getStore(VISUALS_STORE).setJSON(jobId, {
       status: 'queued',
       owner: userKey,
-      input: { text, lang, level, currency, mode, context },
+      input: { text, lang, level, currency, mode, context, targetSeconds, totalMinutes, slideCount },
       createdAt: Date.now(),
     });
     // Returns 202 at once; the work continues for up to 15 minutes.
